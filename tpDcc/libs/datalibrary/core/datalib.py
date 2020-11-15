@@ -74,7 +74,7 @@ class DataLibrary(QObject):
     searchFinished = Signal()
     searchTimeFinished = Signal()
 
-    def __init__(self, path=None, *args):
+    def __init__(self, path=None, library_window=None, *args):
         super(DataLibrary, self).__init__(*args)
 
         self._path = path
@@ -90,6 +90,7 @@ class DataLibrary(QObject):
         self._global_queries = dict()
         self._search_time = 0
         self._search_enabled = True
+        self._library_window = library_window
 
         self.set_path(path)
         self.set_dirty(True)
@@ -113,6 +114,68 @@ class DataLibrary(QObject):
          """
 
         self._path = value
+
+    def add_paths(self, paths, data=None):
+        """
+        Adds the give npath and data to the database
+        :param paths: list(str)
+        :param data: dict or None
+        """
+
+        data = data or dict()
+        self.update_paths(paths, data)
+
+    def update_paths(self, paths, data):
+        """
+        Updates the given paths with the given data in the database
+        :param paths: list(str)
+        :param data: dict
+        """
+
+        current_data = self._read()
+        paths = path_utils.normalize_paths(paths)
+        for path in paths:
+            if path in current_data:
+                current_data[path].update(data)
+            else:
+                current_data[path] = data
+
+        self._save(current_data)
+
+    def rename_path(self, source, target):
+        """
+        Renames the source path to the given name
+        :param source: str
+        :param target: str
+        :return: str
+        """
+
+        utils.rename_path_in_file(self.database_path(), source, target)
+        self.set_dirty(True)
+
+        return target
+
+    def remove_path(self, path):
+        """
+        Removes the given path from the database
+        :param path: str
+        """
+
+        self.remove_paths([path])
+
+    def remove_paths(self, paths):
+        """
+        Removes the given paths from the database
+        :param paths: list(str)
+        """
+
+        data = self.read()
+        paths = path_utils.normalize_paths(paths)
+        for path in paths:
+            if path in data:
+                del data[path]
+
+        self._save(data)
 
     def database_path(self):
         """
@@ -248,6 +311,16 @@ class DataLibrary(QObject):
 
         self._save(new_item_data)
 
+        self.dataChanged.emit()
+
+    def clear(self):
+        """
+        Clears all the library data
+        """
+
+        self._items = list()
+        self._results = list()
+        self._grouped_results = list()
         self.dataChanged.emit()
 
     # =================================================================================================================
@@ -456,7 +529,7 @@ class DataLibrary(QObject):
             module = data_found[path].get('__class__')
             item_class = classes.get(module)
             if item_class:
-                item = item_class(path, library=self)
+                item = item_class(path, library=self, library_window=self._library_window)
                 item.set_item_data(data_found[path])
                 self._items.append(item)
 
@@ -551,16 +624,6 @@ class DataLibrary(QObject):
 
         return self._search_time
 
-    def clear(self):
-        """
-        Clears all the library data
-        """
-
-        self._items = list()
-        self._results = list()
-        self._grouped_results = list()
-        self.dataChanged.emit()
-
     # =================================================================================================================
     # STATIC FUNCTIONS
     # =================================================================================================================
@@ -641,7 +704,10 @@ class DataLibrary(QObject):
 
             def sort_key(item):
                 default = False if reverse else ''
-                return item.item_data().get(field, default)
+                if hasattr(item, 'item_data') and callable(item.item_data):
+                    return item.item_data().get(field, default)
+                else:
+                    return item.get(field, default)
 
             items = sorted(items, key=sort_key, reverse=reverse)
         LOGGER.debug('Sort items took {}'.format(time.time() - start_time))
