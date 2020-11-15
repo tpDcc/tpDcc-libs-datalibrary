@@ -2,8 +2,10 @@
 # -*- coding: utf-8 -*-
 
 """
-Module that contains general tests for tpDcc-libs-nameit
+Module that contains general tests for tpDcc-libs-datalibrary
 """
+
+from __future__ import print_function, division, absolute_import
 
 from tpDcc.libs.unittests.core import unittestcase
 
