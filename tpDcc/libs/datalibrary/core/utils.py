@@ -16,7 +16,7 @@ import tempfile
 from collections import Mapping, OrderedDict
 
 from tpDcc.managers import configs
-from tpDcc.libs.python import osplatform, path as path_utils
+from tpDcc.libs.python import osplatform, modules, path as path_utils, folder as folder_utils
 
 from tpDcc.libs.datalibrary.core import consts, exceptions
 
@@ -156,6 +156,35 @@ def absolute_path(data, start):
     return data
 
 
+def walkup(path, match=None, depth=3, sep='/'):
+    """
+    Travels file path from end to beginning until given depth is meet
+    :param path: str
+    :param match: fn
+    :param depth: int
+    :param sep: str
+    :return: Iterable(str)
+    """
+
+    path = path_utils.normalize_path(path)
+    if not path.endswith(sep):
+        path += sep
+
+    folders = path.split(sep)
+    depth_count = 0
+    for i, folder in enumerate(folders):
+        if folder:
+            if depth_count > depth:
+                break
+            depth_count += 1
+            folder = os.path.sep.join(folders[:i*-1])
+            if os.path.isdir(folder):
+                for filename in os.listdir(folder):
+                    path = os.path.join(folder, filename)
+                    if match is None or match(path):
+                        yield path_utils.normalize_path(path)
+
+
 def update(data, other):
     """
     Update teh value of a nested dictionary of varying depth
@@ -290,8 +319,8 @@ def replace_json(path, old, new, count=-1):
     :return: dict
     """
 
-    old = old.encode("unicode_escape")
-    new = new.encode("unicode_escape")
+    old = str(old.encode("unicode_escape"))
+    new = str(new.encode("unicode_escape"))
 
     data = read(path) or "{}"
     data = data.replace(old, new, count)
@@ -426,28 +455,43 @@ def rename_path(source, target, extension=None, force=False):
     target = path_utils.normalize_path(target)
     LOGGER.debug('Renaming: {} > {}'.format(source, target))
 
-    if source == target and not force:
-        raise exceptions.RenamePathError('The source path and destination path are the same: {}'.format(source))
-    if os.path.exists(target) and not force:
-        raise exceptions.RenamePathError('Cannot save over an existing path: "{}"'.format(target))
-    if not os.path.exists(dirname):
-        raise exceptions.RenamePathError('The system cannot find the specified path: "{}"'.format(dirname))
-    if not os.path.exists(os.path.dirname(target)) and force:
-        os.mkdir(os.path.dirname(target))
-    if not os.path.exists(source):
-        raise exceptions.RenamePathError('The system cannot find the specified path: "{}"'.format(source))
+    if os.path.isfile(target):
 
-    os.rename(source, target)
-    LOGGER.debug('Renamed: {} > {}'.format(source, target))
+        if source == target and not force:
+            raise exceptions.RenamePathError('The source path and destination path are the same: {}'.format(source))
+        if os.path.exists(target) and not force:
+            raise exceptions.RenamePathError('Cannot save over an existing path: "{}"'.format(target))
+        if not os.path.exists(dirname):
+            raise exceptions.RenamePathError('The system cannot find the specified path: "{}"'.format(dirname))
+        if not os.path.exists(os.path.dirname(target)) and force:
+            os.mkdir(os.path.dirname(target))
+        if not os.path.exists(source):
+            raise exceptions.RenamePathError('The system cannot find the specified path: "{}"'.format(source))
+        os.rename(source, target)
+        LOGGER.debug('Renamed file: {} > {}'.format(source, target))
+    elif os.path.dirname(target):
+        if source == target:
+            raise exceptions.RenamePathError('The source path and destination path are the same: {}'.format(source))
+        if not os.path.exists(dirname):
+            raise exceptions.RenamePathError('The system cannot find the specified path: "{}"'.format(dirname))
+        if not os.path.exists(dirname):
+            raise exceptions.RenamePathError('The system cannot find the specified path: "{}"'.format(dirname))
+        if not os.path.exists(os.path.dirname(target)) and force:
+            os.mkdir(os.path.dirname(target))
+        if not os.path.exists(source):
+            raise exceptions.RenamePathError('The system cannot find the specified path: "{}"'.format(source))
+        folder_utils.move_folder(source, target)
+        LOGGER.debug('Renamed folder: {} > {}'.format(source, target))
 
     return target
 
 
-def copy_path(source, target):
+def copy_path(source, target, force=False):
     """
     Makes a copy of the given source path to the given destination path
     :param source: str
     :param target: str
+    :param force: bool
     :return: str
     """
 
@@ -460,8 +504,20 @@ def copy_path(source, target):
 
     if source == target:
         raise IOError('The source path and destination path are the same: {}'.format(source))
-    if os.path.exists(target):
+    if not force and os.path.exists(target):
         raise IOError('Cannot copy over an existing path: {}'.format(target))
+
+    if force and os.path.exists(target):
+        if os.path.isdir(target):
+            shutil.rmtree(target)
+        else:
+            os.remove(target)
+
+    # Ensure target directory exists
+    target_directory = os.path.dirname(target)
+    if not os.path.exists(target_directory):
+        os.makedirs(target_directory)
+
     if os.path.isfile(source):
         shutil.copy(source, target)
     else:
@@ -530,6 +586,9 @@ def temp_path(*args):
 
     datalib_config = configs.get_library_config('tpDcc-libs-datalibrary')
     temp_path = datalib_config.get('temp_path')
+    if not temp_path:
+        temp_path = tempfile.mkdtemp()
+
     temp_path = path_utils.normalize_path(os.path.join(format_path(temp_path), *args))
 
     return temp_path
@@ -569,3 +628,33 @@ def paths_from_urls(urls):
                 path = path[1:]
 
         yield path
+
+
+def register_item_class(item_class):
+    """
+    Registers the given item class
+    :param item_class: LibraryItem class
+    """
+
+    # To avoid cycle imports
+    from tpDcc.libs.datalibrary.managers import data
+
+    data._LOADED_DATA_ITEMS[item_class.__name__] = item_class
+
+
+def register_item_classes_from_config():
+    """
+    Registers all classes found in tpDcc-libs-datalibrary configuration file
+    """
+
+    datalib_config = configs.get_library_config('tpDcc-libs-datalibrary')
+    extra_item_classes = datalib_config.get('extra_item_classes')
+    if not extra_item_classes:
+        return
+
+    for item_class_name in extra_item_classes:
+        module_class = modules.resolve_module(item_class_name)
+        if not module_class:
+            LOGGER.warning('Impossible to register data item class: "{}"'.format(module_class))
+            continue
+        register_item_class(module_class)
