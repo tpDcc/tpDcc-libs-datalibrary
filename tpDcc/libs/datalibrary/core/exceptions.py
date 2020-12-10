@@ -66,6 +66,10 @@ class DccUtilsError(Exception):
     pass
 
 
+class NoMatchFoundError(DccUtilsError):
+    pass
+
+
 class ObjectsError(DccUtilsError):
     pass
 
