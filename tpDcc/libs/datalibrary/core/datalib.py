@@ -15,10 +15,11 @@ from collections import OrderedDict
 
 from Qt.QtCore import Signal, QObject
 
+from tpDcc import dcc
 from tpDcc.managers import configs
 from tpDcc.libs.python import python, modules, path as path_utils
 
-from tpDcc.libs.datalibrary.core import consts, utils
+from tpDcc.libs.datalibrary.core import consts, utils, factory
 from tpDcc.libs.datalibrary.managers import data
 
 LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
@@ -74,7 +75,7 @@ class DataLibrary(QObject):
     searchFinished = Signal()
     searchTimeFinished = Signal()
 
-    def __init__(self, path=None, library_window=None, *args):
+    def __init__(self, path=None, library_window=None, items_factory=None, *args):
         super(DataLibrary, self).__init__(*args)
 
         self._path = path
@@ -91,6 +92,7 @@ class DataLibrary(QObject):
         self._search_time = 0
         self._search_enabled = True
         self._library_window = library_window
+        self._factory = items_factory or factory.ItemsFactory()
 
         self.set_path(path)
         self.set_dirty(True)
@@ -169,7 +171,7 @@ class DataLibrary(QObject):
         :param paths: list(str)
         """
 
-        data = self.read()
+        data = self._read()
         paths = path_utils.normalize_paths(paths)
         for path in paths:
             if path in data:
@@ -193,6 +195,14 @@ class DataLibrary(QObject):
             datalib_path = path_utils.join_path(path_utils.get_user_data_dir('dataLibrary'), 'data.db')
 
         return path_utils.clean_path(datalib_path)
+
+    def library_window(self):
+        """
+        Returns library window this library is attached into
+        :return:
+        """
+
+        return self._library_window
 
     def is_dirty(self):
         """
@@ -226,6 +236,23 @@ class DataLibrary(QObject):
 
         return recursive_steps
 
+    def item_class_from_data_type(self, data_type, **kwargs):
+        """
+        Returns data instance class from the given data type
+        :param data_type: str
+        :param kwargs:
+        :return: variant
+        """
+
+        package_name = kwargs.pop('package_name', None)
+        do_reload = kwargs.pop('do_reload', False)
+
+        for item_class in data.get_all_data_items(package_name=package_name, do_reload=do_reload):
+            if item_class.DATA_TYPE == data_type:
+                return item_class
+
+        return None
+
     def item_from_path(self, path, **kwargs):
         """
         Returns a new data item instance from the given path
@@ -236,11 +263,16 @@ class DataLibrary(QObject):
 
         path = path_utils.clean_path(path)
 
+        data_type = kwargs.pop('data_type', None)
+        item_data = kwargs.pop('data', None)
         package_name = kwargs.pop('package_name', None)
         do_reload = kwargs.pop('do_reload', False)
-        for item_class in list(data.get_all_data_items(package_name=package_name, do_reload=do_reload).values()):
+        for item_class in data.get_all_data_items(package_name=package_name, do_reload=do_reload):
             if item_class.match(path):
-                return item_class(path, **kwargs)
+                return factory.ItemsFactory().create_item(item_class, path=path, data=item_data, library=self)
+            if data_type:
+                if item_class.match_type(data_type):
+                    return factory.ItemsFactory().create_item(item_class, path=path, data=item_data, library=self)
 
     def items_from_paths(self, paths, **kwargs):
         """
@@ -510,6 +542,8 @@ class DataLibrary(QObject):
         :return: list(LibraryItem)
         """
 
+        # TODO: Item creation should be managed outside of this class
+
         if not self.is_dirty():
             return self._items
 
@@ -523,17 +557,37 @@ class DataLibrary(QObject):
 
         classes = dict()
         for module in modules_found:
-            classes[module] = modules.resolve_module(module)
+            imported_module = modules.resolve_module(module, log_error=True)
+            if not imported_module:
+                LOGGER.warning('Impossible to import data library item: "{}"'.format(module))
+                continue
+            classes[module] = imported_module
 
         for path in list(data_found.keys()):
             module = data_found[path].get('__class__')
             item_class = classes.get(module)
-            if item_class:
-                item = item_class(path, library=self, library_window=self._library_window)
-                item.set_item_data(data_found[path])
+            if item_class and self.item_is_supported_in_current_dcc(item_class):
+                # item_view = self._factory.create_view(item_class, path, data_found[path], self, self._library_window)
+                item = self._factory.create_item(item_class, path, data_found[path], self)
                 self._items.append(item)
 
         return self._items
+
+    def item_is_supported_in_current_dcc(self, item):
+        """
+        Returns whether or not given item is supported in current DCC
+        :param item: class or DataItem instance
+        :return: bool
+        """
+
+        if not item.SUPPORTED_DCCS:
+            return True
+
+        current_dcc = dcc.client().get_name()
+        if current_dcc not in item.SUPPORTED_DCCS:
+            return False
+
+        return True
 
     def add_item(self, item):
         """
@@ -562,8 +616,8 @@ class DataLibrary(QObject):
 
         current_data = self._read()
         for item in items:
-            path = item.path()
-            item_data = item.item_data()
+            path = item.path
+            item_data = item.data
             current_data.setdefault(path, dict())
             current_data[path].update(item_data)
 
@@ -588,10 +642,10 @@ class DataLibrary(QObject):
 
         items = self.create_items() or list()
         for item in items:
-            match = self.match(item.item_data(), queries)
+            match = self.match(item.data, queries)
             if match:
                 results.append(item)
-            fields.extend(item.item_data().keys())
+            fields.extend(list(item.data.keys()))
 
         self._fields = list(set(fields))
 
@@ -599,6 +653,26 @@ class DataLibrary(QObject):
             results = self.sorted(results, self.sort_by())
 
         return results
+
+    def find_items_views(self, queries):
+        """
+        Get the item views that match the given queries
+        :param queries: list(dict)
+        :return: list(LibraryItem)
+        """
+
+        items = self.find_items(queries)
+        if not items:
+            return items
+
+        item_views = list()
+        for item in items:
+            item_view = factory.ItemsFactory().create_view_from_item(item)
+            if not item_view:
+                continue
+            item_views.append(item_view)
+
+        return item_views
 
     def results(self):
         """
