@@ -11,10 +11,11 @@ from Qt.QtCore import Qt, QRect, QSize
 from Qt.QtWidgets import QTreeWidgetItem
 from Qt.QtGui import QFontMetrics, QColor, QPen, QBrush
 
-from tpDcc.libs.datalibrary.core import consts, dataitem
+from tpDcc.libs.datalibrary.core import consts
+from tpDcc.libs.datalibrary.core.views import item
 
 
-class GroupDataItem(dataitem.DataItem, object):
+class GroupDataItemView(item.ItemView, object):
     """
     Class that defines group of items
     """
@@ -25,7 +26,7 @@ class GroupDataItem(dataitem.DataItem, object):
     HEIGHT = consts.GROUP_ITEM_HEIGHT
 
     def __init__(self, *args):
-        super(GroupDataItem, self).__init__(*args)
+        super(GroupDataItemView, self).__init__(*args)
 
         self._children = list()
 
@@ -133,7 +134,7 @@ class GroupDataItem(dataitem.DataItem, object):
         :param index: QModelIndex
         """
 
-        super(GroupDataItem, self).paint_background(painter, option, index)
+        super(GroupDataItemView, self).paint_background(painter, option, index)
 
         painter.setPen(QPen(Qt.NoPen))
         visual_rect = self.visualRect(option)
