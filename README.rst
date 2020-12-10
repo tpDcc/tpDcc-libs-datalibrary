@@ -3,6 +3,21 @@ tpDcc-libs-datalibrary
 
 Customizable and easy to use data library.
 
+.. image:: https://img.shields.io/badge/Python-2.7-yellow?logo=python
+    :target: https://www.python.com/
+
+.. image:: https://img.shields.io/badge/Python-3.7-yellow?logo=python
+    :target: https://www.python.com/
+
+.. image:: https://img.shields.io/badge/Maya-2018-green?logo=autodesk
+    :target: https://www.autodesk.com/
+
+.. image:: https://img.shields.io/badge/Maya-2019-green?logo=autodesk
+    :target: https://www.autodesk.com/
+
+.. image:: https://img.shields.io/badge/Maya-2020-green?logo=autodesk
+    :target: https://www.autodesk.com/
+
 .. image:: https://travis-ci.com/tpDcc/tpDcc-libs-datalibrary.svg?branch=master&kill_cache=1
     :target: https://travis-ci.com/tpDcc/tpDcc-libs-datalibrary
 
