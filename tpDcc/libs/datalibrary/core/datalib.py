@@ -356,6 +356,23 @@ class DataLibrary(QObject):
         self.dataChanged.emit()
 
     # =================================================================================================================
+    # CREATE
+    # =================================================================================================================
+
+    def create_folder(self, folder_name, folder_directory):
+
+        data_folder_class = self.item_class_from_data_type(data_type='folder')
+        folder_path = path_utils.join_path(folder_directory, folder_name)
+        folder_item = self._factory.create_item(data_folder_class, folder_path, {}, self)
+        valid_save = folder_item.safe_save()
+        if not valid_save:
+            return None
+
+        self.add_item(folder_item)
+
+        return folder_item
+
+    # =================================================================================================================
     # SEARCH
     # =================================================================================================================
 
@@ -742,6 +759,8 @@ class DataLibrary(QObject):
                     match = value != item_value
                 elif cond == 'startswith':
                     match = item_value.startswith(value)
+                elif cond == 'endswith':
+                    match = item_value.endswith(value)
 
                 if operator == 'or' and match:
                     break

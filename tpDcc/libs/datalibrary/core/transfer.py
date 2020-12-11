@@ -335,7 +335,7 @@ class BaseTransferObject(object):
         :return: None
         """
 
-        LOGGER.info('Saving object: {}'.format(path))
+        LOGGER.debug('Saving object: {}'.format(path))
 
         data = self.data_to_save()
 
@@ -347,7 +347,7 @@ class BaseTransferObject(object):
         with open(path, 'w') as f:
             f.write(str(data))
 
-        LOGGER.info('Saved object: {}'.format(path))
+        LOGGER.debug('Saved object: {}'.format(path))
 
     def dump(self, data=None):
         """

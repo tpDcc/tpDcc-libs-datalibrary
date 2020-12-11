@@ -92,7 +92,7 @@ class BaseItem(QObject):
     # BASE
     # ============================================================================================================
 
-    def show_in_folder(self):
+    def show_in_explorer(self):
         """
         Opens folder in OS folder explorer where file is located
         """

@@ -53,9 +53,29 @@ class DataItem(item.BaseItem):
 
         super(DataItem, self).__init__(path=path, data=data)
 
+    def __eq__(self, other):
+        if not other:
+            return False
+        if other.name == self.name and other.path == self.path and other.DATA_TYPE == self.DATA_TYPE:
+            return True
+
+        return False
+
     # =================================================================================================================
     # PROPERTIES
     # =================================================================================================================
+
+    @item.BaseItem.full_path.getter
+    def full_path(self):
+        return path_utils.clean_path(os.path.join(self.path, self.full_name))
+
+    @property
+    def full_name(self):
+        name = self.name
+        if self.EXTENSION and not name.endswith(self.EXTENSION):
+            name = '{}{}'.format(name, self.EXTENSION)
+
+        return name
 
     @property
     def id(self):
@@ -244,9 +264,11 @@ class DataItem(item.BaseItem):
     @qt_decorators.show_wait_cursor
     def safe_save(self, *args, **kwargs):
 
+        sync = kwargs.pop('sync', False)
+
         target = self.path
-        if target and self.EXTENSION and not target.endswith(self.EXTENSION):
-            target += self.EXTENSION
+        # if target and self.EXTENSION and not target.endswith(self.EXTENSION):
+        #     target += self.EXTENSION
 
         self.path = target
         LOGGER.debug('Saving item: {}'.format(target))
@@ -265,7 +287,10 @@ class DataItem(item.BaseItem):
 
         LOGGER.debug('Item Saved: {}'.format(target))
 
-        self.item.saved.emit(self)
+        self.saved.emit(self)
+
+        if sync and self.library:
+            self.library.sync(progress_callback=None)
 
         return True
 
@@ -325,29 +350,31 @@ class DataItem(item.BaseItem):
             self.library.copy_path(source, target)
         self.copied.emit(self, source, target)
 
-    def move(self, target):
+    def move(self, target, sync=False):
         """
         Moves the current item to the given destination
         :param target: str
+        :param sync: bool
         """
 
         source = self.path
         if os.path.dirname(source):
             target = os.path.join(target, os.path.basename(source))
 
-        self.rename(target)
+        self.rename(target, sync=sync)
 
-    def rename(self, target, extension=None):
+    def rename(self, target, extension=None, sync=False):
         """
         Renames the current path to the give destination path
         :param target: str
         :param extension: bool or None
+        :param sync: bool
         """
 
         library = self.library
 
         extension = extension or self.EXTENSION
-        if target and extension not in target:
+        if target and extension and extension not in target:
             target += extension
 
         source = self.path
@@ -361,7 +388,10 @@ class DataItem(item.BaseItem):
 
         self.renamed.emit(self, source, target)
 
-    def delete(self):
+        if sync and self.library:
+            self.library.sync(progress_callback=None)
+
+    def delete(self, sync=False):
         """
         Deletes the item from disk and the library model
         """
@@ -371,3 +401,6 @@ class DataItem(item.BaseItem):
             self.library.remove_path(self.path)
 
         self.deleted.emit(self)
+
+        if sync and self.library:
+            self.library.sync(progress_callback=None)

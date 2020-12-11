@@ -59,7 +59,7 @@ class FolderItemView(dataitem.DataItemView):
         name = name.strip()
         path = os.path.join(path, name)
         item_view = library_window.factory.create_view(item_class, path, data=None, library=library_window.library())
-        valid_save = item_view.safe_save()
+        valid_save = item_view.item.safe_save()
         if not valid_save:
             return
 

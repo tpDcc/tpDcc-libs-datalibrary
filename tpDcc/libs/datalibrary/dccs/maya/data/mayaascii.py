@@ -84,7 +84,7 @@ class MayaAsciiData(dataitem.MayaDataItem):
         :param kwargs: dict
         """
 
-        LOGGER.info('Saving {} | {}'.format(self.path, kwargs))
+        LOGGER.debug('Saving {} | {}'.format(self.path, kwargs))
 
         super(MayaAsciiData, self).save(thumbnail=thumbnail, **kwargs)
 

@@ -41,6 +41,10 @@ class FolderData(dataitem.DataItem):
     # PROPERTIES
     # ============================================================================================================
 
+    @dataitem.DataItem.full_path.getter
+    def full_path(self):
+        return self.path
+
     @property
     def icon_color(self):
         """

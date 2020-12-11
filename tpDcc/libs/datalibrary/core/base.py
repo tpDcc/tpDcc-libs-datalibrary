@@ -258,7 +258,7 @@ class BaseDataItem(dataitem.DataItem):
         :param kwargs: dict
         """
 
-        LOGGER.info('Saving {} | {}'.format(self.path, kwargs))
+        LOGGER.debug('Saving {} | {}'.format(self.path, kwargs))
 
         self.transfer_object.save(self.transfer_path())
         self.create(**kwargs)
@@ -267,6 +267,18 @@ class BaseDataItem(dataitem.DataItem):
         if thumbnail:
             basename = os.path.basename(thumbnail)
             shutil.copyfile(thumbnail, self.path + '/' + basename)
+
+    def write_lines(self, lines, append=True):
+        """
+        Writes a list of text lines to a file. Every entry in the list is a new line
+        :param lines: list<str>, list of text lines in which each entry is a new line
+        :param append: bool, Whether to append the text or replace it
+        """
+
+        if not self.full_path or not os.path.isfile(self.full_path):
+            return
+
+        return fileio.write_lines(self.full_path, lines, append=append)
 
     # ============================================================================================================
     # INTERNAL

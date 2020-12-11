@@ -12,7 +12,7 @@ import logging
 import traceback
 from functools import partial
 
-from Qt.QtCore import Qt, Signal, QObject, QUrl
+from Qt.QtCore import Qt, QUrl
 from Qt.QtWidgets import QApplication, QAction, QDialogButtonBox, QFileDialog, QMessageBox
 from Qt.QtGui import QIcon
 
@@ -49,6 +49,7 @@ class DataItemView(item.ItemView):
         self._item.saving.connect(self._on_before_save_item)
         self._item.saved.connect(self._on_item_saved)
         self._item.copied.connect(self._on_item_copied)
+        self._item.renamed.connect(self._on_item_renamed)
         self._item.deleted.connect(self._on_item_deleted)
 
     # ============================================================================================================
@@ -527,7 +528,7 @@ class DataItemView(item.ItemView):
         Internal callback function that is called when Show in Folder action is clicked
         """
 
-        self.item.show_in_folder()
+        self.item.show_in_explorer()
 
     def _on_show_delete_dialog(self):
         """
@@ -581,6 +582,10 @@ class DataItemView(item.ItemView):
         if self.library_window():
             self.library_window().refresh()
 
-    def _on_item_deleted(self):
+    def _on_item_renamed(self):
+        if self.library_window():
+            self.library_window().sync()
+
+    def _on_item_renamed_on_item_deleted(self):
         if self.library_window():
             self.library_window().sync()

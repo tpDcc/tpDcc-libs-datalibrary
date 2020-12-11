@@ -7,7 +7,10 @@ Module that contains Python script file item implementation
 
 from __future__ import print_function, division, absolute_import
 
+import os
 import logging
+
+from tpDcc.libs.python import fileio
 
 from tpDcc.libs.datalibrary.core import base, transfer
 
@@ -52,29 +55,20 @@ class PythonScriptData(base.BaseDataItem):
 
         return fields
 
-    def save(self, thumbnail='', **kwargs):
+    def create(self, **kwargs):
         """
-        Saves all the given data to the item path on disk
-        :param thumbnail: str
-        :param kwargs: dict
-        """
-
-        LOGGER.info('Saving {} | {}'.format(self.path, kwargs))
-
-        super(PythonScriptData, self).save(thumbnail=thumbnail, **kwargs)
-
-        self.transfer_object.save(self.transfer_path())
-
-        item_name = kwargs.get('name', self._transfer_name())
-        data = scripts.ScriptPythonData(name='{}{}'.format(item_name, self.EXTENSION), path=self.path)
-        data.save('')
-
-    def _transfer_name(self):
-        """
-        Internal function that returns the transfer name that should be used
+        Creates the data file
         :return: str
         """
 
-        return 'pythonscript'
+        file_path = super(PythonScriptData, self).create(**kwargs)
+        if not file_path or not os.path.isfile(file_path):
+            return
 
+        lines = kwargs.pop('lines', None)
+        if not lines:
+            return
 
+        self.write_lines(lines=lines, append=True)
+
+        return file_path
