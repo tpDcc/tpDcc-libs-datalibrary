@@ -8,17 +8,15 @@ Module that contains library data item widget implementation
 from __future__ import print_function, division, absolute_import
 
 import os
-import shutil
 import logging
 
 from Qt.QtCore import Signal
 
 from tpDcc.managers import configs
 from tpDcc.libs.python import path as path_utils
-from tpDcc.libs.qt.core import decorators as qt_decorators
 
 from tpDcc.libs.datalibrary.core import item, utils
-from tpDcc.libs.datalibrary.core import consts
+from tpDcc.libs.datalibrary.core import consts, transfer
 
 LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
 
@@ -36,6 +34,9 @@ class DataItem(item.BaseItem):
     ENABLE_DELETE = False
     ENABLE_NESTED_ITEMS = False
 
+    TRANSFER_CLASS = transfer.TransferObject()
+    TRANSFER_BASENAME = '.meta'
+
     dataChanged = Signal(object)
     metaDataChanged = Signal(dict)
     saved = Signal(object)
@@ -50,6 +51,10 @@ class DataItem(item.BaseItem):
         self._library = library
         self._metadata = dict()
         self._cancel_save = False
+        self._transfer_object = None
+
+        if path and not self.EXTENSION and not path.endswith(self.EXTENSION):
+            path = '{}{}'.format(path, self.EXTENSION)
 
         super(DataItem, self).__init__(path=path, data=data)
 
@@ -64,10 +69,6 @@ class DataItem(item.BaseItem):
     # =================================================================================================================
     # PROPERTIES
     # =================================================================================================================
-
-    @item.BaseItem.full_path.getter
-    def full_path(self):
-        return path_utils.clean_path(os.path.join(self.path, self.full_name))
 
     @property
     def full_name(self):
@@ -94,6 +95,16 @@ class DataItem(item.BaseItem):
         self._metadata = value
         self.metaDataChanged.emit(self._metadata)
 
+    @property
+    def transfer_object(self):
+
+        if not self._transfer_object:
+            path = self.transfer_path()
+            force_creation = not bool(os.path.isfile(path))
+            self._transfer_object = self.TRANSFER_CLASS.from_path(path, force_creation=force_creation)
+
+        return self._transfer_object
+
     # =================================================================================================================
     # OVERRIDES
     # =================================================================================================================
@@ -108,7 +119,7 @@ class DataItem(item.BaseItem):
         item_data = dict(self.read_metadata())
 
         dirname, basename, extension = path_utils.split_path(path)
-        name = os.path.basename(path)
+        name = os.path.splitext(os.path.basename(path))[0]
         category = os.path.basename(dirname) or dirname
 
         modified = ''
@@ -258,42 +269,6 @@ class DataItem(item.BaseItem):
 
         raise NotImplementedError('save method for {} has not been implemented!'.format(self.__class__.__name__))
 
-    def cancel_safe_save(self):
-        self._cancel_save = True
-
-    @qt_decorators.show_wait_cursor
-    def safe_save(self, *args, **kwargs):
-
-        sync = kwargs.pop('sync', False)
-
-        target = self.path
-        # if target and self.EXTENSION and not target.endswith(self.EXTENSION):
-        #     target += self.EXTENSION
-
-        self.path = target
-        LOGGER.debug('Saving item: {}'.format(target))
-        self.saving.emit(target)
-
-        if self._cancel_save:
-            return False
-
-        temp = utils.create_temp_path(self.__class__.__name__)
-        self.path = temp
-        self.save(*args, **kwargs)
-        shutil.move(temp, target)
-        self.path = target
-
-        self.sync_item_data()
-
-        LOGGER.debug('Item Saved: {}'.format(target))
-
-        self.saved.emit(self)
-
-        if sync and self.library:
-            self.library.sync(progress_callback=None)
-
-        return True
-
     # ============================================================================================================
     # SCHEMA
     # ============================================================================================================
@@ -335,6 +310,24 @@ class DataItem(item.BaseItem):
         return list()
 
     # ============================================================================================================
+    # TRANSFER OBJECT
+    # ============================================================================================================
+
+    def transfer_path(self):
+        """
+        Returns the disk location to transfer path
+        :return: str
+        """
+
+        # NOTE: Here we use path instead of get_directory because when a transfer file is created the path points
+        # to the temporal directory where the transfer file will be created
+        # TODO: Improve this to be able to remove this "hacky" comment
+        if self.TRANSFER_BASENAME and self.TRANSFER_CLASS:
+            return os.path.join(self.path, self.TRANSFER_BASENAME)
+
+        return None
+
+    # ============================================================================================================
     # COPY / RENAME
     # ============================================================================================================
 
@@ -344,11 +337,14 @@ class DataItem(item.BaseItem):
         :param target: str
         """
 
-        source = self.path
+        source = self.path if not self.TRANSFER_BASENAME or not self.TRANSFER_CLASS else self.get_directory()
         target = utils.copy_path(source, target)
         if self.library:
-            self.library.copy_path(source, target)
+            # NOTE: In the library we always path the full path of the file/folder
+            self.library.copy_path(self.path, target)
         self.copied.emit(self, source, target)
+
+        return target
 
     def move(self, target, sync=False):
         """
@@ -357,7 +353,7 @@ class DataItem(item.BaseItem):
         :param sync: bool
         """
 
-        source = self.path
+        source = self.path if not self.TRANSFER_BASENAME or not self.TRANSFER_CLASS else self.get_directory()
         if os.path.dirname(source):
             target = os.path.join(target, os.path.basename(source))
 
@@ -378,15 +374,22 @@ class DataItem(item.BaseItem):
             target += extension
 
         source = self.path
-        target = utils.rename_path(source, target)
+        target_path = utils.rename_path(source, target)
         if library:
-            library.rename_path(source, target)
+            library.rename_path(source, target_path)
 
-        self.path = target
+        if self.TRANSFER_BASENAME and self.TRANSFER_CLASS:
+            target_no_extension = os.path.splitext(target)[0]
+            data_folder = self.get_directory()
+            utils.rename_path(data_folder, target_no_extension)
+            if library:
+                library.rename_path(data_folder, target_no_extension)
+
+        self.path = target_path
 
         self.sync_item_data()
 
-        self.renamed.emit(self, source, target)
+        self.renamed.emit(self, source, target_path)
 
         if sync and self.library:
             self.library.sync(progress_callback=None)
@@ -396,9 +399,10 @@ class DataItem(item.BaseItem):
         Deletes the item from disk and the library model
         """
 
-        utils.remove_path(self.path)
+        source = self.path if not self.TRANSFER_BASENAME or not self.TRANSFER_CLASS else self.get_directory()
+        utils.remove_path(source)
         if self.library:
-            self.library.remove_path(self.path)
+            self.library.remove_path(source)
 
         self.deleted.emit(self)
 

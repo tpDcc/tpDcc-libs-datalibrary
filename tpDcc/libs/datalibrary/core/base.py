@@ -15,17 +15,15 @@ import traceback
 from Qt.QtCore import Signal
 
 from tpDcc import dcc
-from tpDcc.libs.python import fileio, timedate
+from tpDcc.libs.python import fileio, folder, timedate
+from tpDcc.libs.qt.core import decorators as qt_decorators
 
-from tpDcc.libs.datalibrary.core import dataitem, transfer
+from tpDcc.libs.datalibrary.core import utils, dataitem
 
 LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
 
 
 class BaseDataItem(dataitem.DataItem):
-
-    TRANSFER_CLASS = transfer.TransferObject()
-    TRANSFER_BASENAME = 'data.json'
 
     emitError = Signal(str, str)
     loadValueChanged = Signal(object, object)
@@ -33,22 +31,7 @@ class BaseDataItem(dataitem.DataItem):
     def __init__(self, *args, **kwargs):
         super(BaseDataItem, self).__init__(*args, **kwargs)
 
-        self._transfer_object = None
         self._current_load_values = dict()
-
-    # =================================================================================================================
-    # PROPERTIES
-    # =================================================================================================================
-
-    @property
-    def transfer_object(self):
-
-        if not self._transfer_object:
-            path = self.transfer_path()
-            force_creation = not bool(os.path.isfile(path))
-            self._transfer_object = self.TRANSFER_CLASS.from_path(path, force_creation=force_creation)
-
-        return self._transfer_object
 
     # ============================================================================================================
     # OVERRIDES
@@ -131,6 +114,52 @@ class BaseDataItem(dataitem.DataItem):
     # BASE
     # ============================================================================================================
 
+    def cancel_safe_save(self):
+        self._cancel_save = True
+
+    @qt_decorators.show_wait_cursor
+    def safe_save(self, *args, **kwargs):
+
+        sync = kwargs.pop('sync', False)
+
+        orig_target = self.path
+        # if target and self.EXTENSION and not target.endswith(self.EXTENSION):
+        #     target += self.EXTENSION
+
+        if orig_target.endswith(self.EXTENSION):
+            target = os.path.dirname(self.path)
+        else:
+            target = orig_target
+
+        LOGGER.debug('Saving item: {}'.format(orig_target))
+        self.saving.emit(orig_target)
+
+        if self._cancel_save:
+            return False
+
+        temp = utils.create_temp_path(self.__class__.__name__)
+        self.path = temp
+        self.save(*args, **kwargs)
+
+        if self.TRANSFER_CLASS:
+            shutil.move(temp, target)
+            target_data = self.library.item_from_path(target)
+            target_data.sync_item_data()
+        else:
+            folder.move_folder(temp, target, only_contents=True)
+        self.path = orig_target
+
+        self.sync_item_data()
+
+        LOGGER.debug('Item Saved: {}'.format(orig_target))
+
+        self.saved.emit(self)
+
+        if sync and self.library:
+            self.library.sync(progress_callback=None)
+
+        return True
+
     def current_load_value(self, name):
         """
         Returns the current filed value for the given name
@@ -176,21 +205,6 @@ class BaseDataItem(dataitem.DataItem):
         except Exception as exc:
             LOGGER.error('Item Error: {}'.format(traceback.format_exc()))
             self.emitError.emit('Item Error', str(exc))
-
-    # ============================================================================================================
-    # TRANSFER OBJECT
-    # ============================================================================================================
-
-    def transfer_path(self):
-        """
-        Returns the disk location to transfer path
-        :return: str
-        """
-
-        if self.TRANSFER_BASENAME:
-            return os.path.join(self.path, self.TRANSFER_BASENAME)
-        else:
-            return self.path
 
     # =================================================================================================================
     # LOAD / SAVE
@@ -260,7 +274,9 @@ class BaseDataItem(dataitem.DataItem):
 
         LOGGER.debug('Saving {} | {}'.format(self.path, kwargs))
 
-        self.transfer_object.save(self.transfer_path())
+        if self.TRANSFER_CLASS:
+            self.transfer_object.save(self.transfer_path())
+
         self.create(**kwargs)
 
         # Copy icon path to the given path
@@ -275,10 +291,10 @@ class BaseDataItem(dataitem.DataItem):
         :param append: bool, Whether to append the text or replace it
         """
 
-        if not self.full_path or not os.path.isfile(self.full_path):
+        if not self.path or not os.path.isfile(self.path):
             return
 
-        return fileio.write_lines(self.full_path, lines, append=append)
+        return fileio.write_lines(self.path, lines, append=append)
 
     # ============================================================================================================
     # INTERNAL
