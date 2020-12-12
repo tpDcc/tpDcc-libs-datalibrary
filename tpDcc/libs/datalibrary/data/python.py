@@ -26,7 +26,6 @@ class PythonScriptData(base.BaseDataItem):
     MENU_NAME = 'Python Script'
 
     TRANSFER_CLASS = transfer.TransferObject(as_class=True)
-    TRANSFER_BASENAME = 'pythonscript.json'
 
     # ============================================================================================================
     # OVERRIDES

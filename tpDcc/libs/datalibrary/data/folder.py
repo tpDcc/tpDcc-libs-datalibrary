@@ -8,10 +8,15 @@ Module that contains library folder item data implementation
 from __future__ import print_function, division, absolute_import
 
 import os
+import logging
 
 from Qt.QtCore import QLocale, QFileInfo
 
+from tpDcc.libs.python import folder as folder_utils
+
 from tpDcc.libs.datalibrary.core import dataitem
+
+LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
 
 
 class FolderData(dataitem.DataItem):
@@ -37,13 +42,12 @@ class FolderData(dataitem.DataItem):
         DEFAULT_ICON_COLOR
     ]
 
+    TRANSFER_BASENAME = None
+    TRANSFER_CLASS = None
+
     # ============================================================================================================
     # PROPERTIES
     # ============================================================================================================
-
-    @dataitem.DataItem.full_path.getter
-    def full_path(self):
-        return self.path
 
     @property
     def icon_color(self):
@@ -120,7 +124,23 @@ class FolderData(dataitem.DataItem):
         :param kwargs: dict
         """
 
-        pass
+        sync = kwargs.pop('sync', False)
+
+        LOGGER.debug('Saving item: {}'.format(self.path))
+
+        # NOTE: for folders, path variable contains the full directory name, so we pass  the dirname of that path
+        new_folder = folder_utils.create_folder(self.name, os.path.dirname(self.path))
+
+        self.sync_item_data()
+
+        LOGGER.debug('Item Saved: {}'.format(self.path))
+
+        self.saved.emit(self)
+
+        if sync and self.library:
+            self.library.sync(progress_callback=None)
+
+        return os.path.isdir(new_folder)
 
     def load_schema(self):
         """

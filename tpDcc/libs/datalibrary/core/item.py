@@ -49,10 +49,6 @@ class BaseItem(QObject):
         self.dataChanged.emit(self._data)
 
     @property
-    def full_path(self):
-        return path_utils.clean_path(os.path.join(self.path, self.name))
-
-    @property
     def path(self):
         return self._path
 
@@ -91,6 +87,14 @@ class BaseItem(QObject):
     # ============================================================================================================
     # BASE
     # ============================================================================================================
+
+    def get_directory(self):
+        """
+        Returns directory of the file path
+        :return: str
+        """
+
+        return os.path.dirname(self.path)
 
     def show_in_explorer(self):
         """

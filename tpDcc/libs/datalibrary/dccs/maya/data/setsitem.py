@@ -19,7 +19,6 @@ class SetsItem(dataitem.MayaDataItem):
     MENU_NAME = 'Selection Set'
 
     TRANSFER_CLASS = selectionset.SelectionSet
-    TRANSFER_BASENAME = 'set.json'
 
     def load(self, namespaces=None):
         """

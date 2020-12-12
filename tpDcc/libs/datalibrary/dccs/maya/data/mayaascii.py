@@ -24,7 +24,6 @@ class MayaAsciiData(dataitem.MayaDataItem):
     MENU_NAME = 'Maya ASCII'
 
     TRANSFER_CLASS = transfer.MayaTransferObject
-    TRANSFER_BASENAME = 'mayaascii.json'
 
     # ============================================================================================================
     # OVERRIDES

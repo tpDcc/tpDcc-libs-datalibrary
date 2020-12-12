@@ -17,7 +17,7 @@ from Qt.QtCore import Signal, QObject
 
 from tpDcc import dcc
 from tpDcc.managers import configs
-from tpDcc.libs.python import python, modules, path as path_utils
+from tpDcc.libs.python import python, modules, fileio, path as path_utils
 
 from tpDcc.libs.datalibrary.core import consts, utils, factory
 from tpDcc.libs.datalibrary.managers import data
@@ -144,6 +144,31 @@ class DataLibrary(QObject):
 
         self._save(current_data)
 
+    def copy_path(self, source, target):
+        """
+        Copy the given source path to the given target path
+        :param source: str
+        :param target:str
+        :return: str
+        """
+
+        source = self.item_from_path(source)
+        if not source:
+            return None
+
+        self.add_paths([target])
+        target_data = self.item_from_path(target)
+        if target_data:
+            target_data.sync_item_data()
+
+        if os.path.isfile(source.path):
+            target = os.path.join(target, os.path.splitext(os.path.basename(source.path))[0])
+            target_data = self.item_from_path(target, data_type=source.DATA_TYPE)
+            if target_data:
+                target_data.sync_item_data()
+
+        return target
+
     def rename_path(self, source, target):
         """
         Renames the source path to the given name
@@ -264,15 +289,24 @@ class DataLibrary(QObject):
         path = path_utils.clean_path(path)
 
         data_type = kwargs.pop('data_type', None)
-        item_data = kwargs.pop('data', None)
         package_name = kwargs.pop('package_name', None)
         do_reload = kwargs.pop('do_reload', False)
+
+        extension = None
+        if data_type:
+            for item_class in data.get_all_data_items(package_name=package_name, do_reload=do_reload):
+                if item_class.DATA_TYPE == data_type:
+                    extension = item_class.EXTENSION
+                    break
+        if extension and not path.endswith(extension):
+            path = '{}{}'.format(path, extension)
+
         for item_class in data.get_all_data_items(package_name=package_name, do_reload=do_reload):
             if item_class.match(path):
-                return factory.ItemsFactory().create_item(item_class, path=path, data=item_data, library=self)
-            if data_type:
-                if item_class.match_type(data_type):
-                    return factory.ItemsFactory().create_item(item_class, path=path, data=item_data, library=self)
+                item = factory.ItemsFactory().create_item(item_class, path=path, data=dict(), library=self)
+                return item
+
+        return None
 
     def items_from_paths(self, paths, **kwargs):
         """
@@ -359,12 +393,12 @@ class DataLibrary(QObject):
     # CREATE
     # =================================================================================================================
 
-    def create_folder(self, folder_name, folder_directory):
+    def create_folder(self, folder_name, folder_directory, sync=False):
 
         data_folder_class = self.item_class_from_data_type(data_type='folder')
         folder_path = path_utils.join_path(folder_directory, folder_name)
         folder_item = self._factory.create_item(data_folder_class, folder_path, {}, self)
-        valid_save = folder_item.safe_save()
+        valid_save = folder_item.save(sync=sync)
         if not valid_save:
             return None
 
@@ -621,6 +655,14 @@ class DataLibrary(QObject):
         """
 
         self.save_item_data(items)
+
+    def update_item(self, item):
+        """
+        Update the given item in the library data
+        :param item: LibraryItem
+        """
+
+        self.save_item_data([item])
 
     def save_item_data(self, items, emit_data_changed=True):
         """
