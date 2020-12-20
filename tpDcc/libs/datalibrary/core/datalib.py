@@ -17,7 +17,7 @@ from Qt.QtCore import Signal, QObject
 
 from tpDcc import dcc
 from tpDcc.managers import configs
-from tpDcc.libs.python import python, modules, fileio, path as path_utils
+from tpDcc.libs.python import python, modules, path as path_utils
 
 from tpDcc.libs.datalibrary.core import consts, utils, factory
 from tpDcc.libs.datalibrary.managers import data
@@ -216,8 +216,12 @@ class DataLibrary(QObject):
             datalib_path = datalib_config.get('database_path')
             if datalib_path:
                 datalib_path = utils.format_path(datalib_path, self.path())
-        if not datalib_path:
-            datalib_path = path_utils.join_path(path_utils.get_user_data_dir('dataLibrary'), 'data.db')
+        else:
+            # TODO: We need to fallback to this path because when using DCC client, configs are not available
+            datalib_path = path_utils.join_path(self.path(), 'data.db')
+
+        # if not datalib_path:
+        #     datalib_path = path_utils.join_path(path_utils.get_user_data_dir('dataLibrary'), 'data.db')
 
         return path_utils.clean_path(datalib_path)
 
@@ -228,6 +232,14 @@ class DataLibrary(QObject):
         """
 
         return self._library_window
+
+    def set_library_window(self, library_window):
+        """
+        Sets library window this library is attached to
+        :param library_window:
+        """
+
+        self._library_window = library_window
 
     def is_dirty(self):
         """

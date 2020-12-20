@@ -77,7 +77,7 @@ class BaseDataItem(dataitem.DataItem):
         if modified:
             modified = timedate.time_ago(modified)
 
-        count = self.transfer_object.object_count()
+        count = self.transfer_object().object_count()
         plural = 's' if count > 1 else ''
         contains = '{} Object{}'.format(count, plural)
 
@@ -94,7 +94,7 @@ class BaseDataItem(dataitem.DataItem):
             },
             {
                 "name": "owner",
-                "value": self.transfer_object.owner(),
+                "value": self.transfer_object().owner(),
             },
             {
                 "name": "created",
@@ -106,7 +106,7 @@ class BaseDataItem(dataitem.DataItem):
             },
             {
                 "name": "comment",
-                "value": self.transfer_object.description() or "No comment",
+                "value": self.transfer_object().description() or "No comment",
             }
         ]
 
@@ -137,7 +137,7 @@ class BaseDataItem(dataitem.DataItem):
         if self._cancel_save:
             return False
 
-        temp = utils.create_temp_path(self.__class__.__name__)
+        temp = utils.create_temp_path(os.path.splitext(os.path.basename(self.path))[0])
         self.path = temp
         self.save(*args, **kwargs)
 
@@ -191,6 +191,45 @@ class BaseDataItem(dataitem.DataItem):
             LOGGER.error('Item Error: {}'.format(traceback.format_exc()))
             self.emitError.emit('Item Error', str(exc))
 
+    def import_from_current_values(self):
+        """
+        Loads the values from current selected objects
+        """
+
+        kwargs = self._current_load_values
+
+        try:
+            self.import_data(**kwargs)
+        except Exception as exc:
+            LOGGER.error('Item Error: {}'.format(traceback.format_exc()))
+            self.emitError.emit('Item Error', str(exc))
+
+    def reference_from_current_values(self):
+        """
+        Loads the values from current selected objects
+        """
+
+        kwargs = self._current_load_values
+
+        try:
+            self.reference_data(**kwargs)
+        except Exception as exc:
+            LOGGER.error('Item Error: {}'.format(traceback.format_exc()))
+            self.emitError.emit('Item Error', str(exc))
+
+    def export_from_current_values(self):
+        """
+        Loads the values from current selected objects
+        """
+
+        kwargs = self._current_load_values
+
+        try:
+            self.export_data(**kwargs)
+        except Exception as exc:
+            LOGGER.error('Item Error: {}'.format(traceback.format_exc()))
+            self.emitError.emit('Item Error', str(exc))
+
     def select_content(self, **kwargs):
         """
         Select the contents of this item in the current DCC scene
@@ -201,7 +240,7 @@ class BaseDataItem(dataitem.DataItem):
         LOGGER.debug(msg)
 
         try:
-            self.transfer_object.select(**kwargs)
+            self.transfer_object().select(**kwargs)
         except Exception as exc:
             LOGGER.error('Item Error: {}'.format(traceback.format_exc()))
             self.emitError.emit('Item Error', str(exc))
@@ -231,7 +270,12 @@ class BaseDataItem(dataitem.DataItem):
                 "error": "No name specified. Please set a name before saving.",
             })
 
-        selection = self.library_window().client.selected_nodes(full_path=True) or list()
+        selection = list()
+        library = self.library
+        if library:
+            library_window = library.library_window()
+            if library_window:
+                selection = library_window.client.selected_nodes(full_path=True) or list()
 
         msg = 'No objects selected. Please select at least one object.' if not selection else ''
 
@@ -261,9 +305,8 @@ class BaseDataItem(dataitem.DataItem):
         :param kwargs: dict
         """
 
-        LOGGER.debug('Loading: {}'.format(self.transfer_path()))
-        self.transfer_object.load(**kwargs)
-        LOGGER.debug('Loaded: {}'.format(self.transfer_path()))
+        if self.TRANSFER_CLASS and self.TRANSFER_BASENAME:
+            self.transfer_object().load(**kwargs)
 
     def save(self, thumbnail='', **kwargs):
         """
@@ -274,8 +317,8 @@ class BaseDataItem(dataitem.DataItem):
 
         LOGGER.debug('Saving {} | {}'.format(self.path, kwargs))
 
-        if self.TRANSFER_CLASS:
-            self.transfer_object.save(self.transfer_path())
+        if self.TRANSFER_CLASS and self.TRANSFER_BASENAME:
+            self.transfer_object(save=True).save(self.transfer_path(save=True))
 
         self.create(**kwargs)
 
@@ -283,6 +326,33 @@ class BaseDataItem(dataitem.DataItem):
         if thumbnail:
             basename = os.path.basename(thumbnail)
             shutil.copyfile(thumbnail, self.path + '/' + basename)
+
+    def import_data(self, *args, **kwargs):
+        """
+        Imports data to current DCC
+        :param args: list
+        :param kwargs: dict
+        """
+
+        raise NotImplemented('Data of type "{}" does not support import operation'.format(self.DATA_TYPE))
+
+    def reference_data(self, *args, **kwargs):
+        """
+        References data to current DCC
+        :param args: list
+        :param kwargs: dict
+        """
+
+        raise NotImplementedError('Data of type "{}" does not support reference operation'.format(self.DATA_TYPE))
+
+    def export_data(self, *args, **kwargs):
+        """
+        Exports data from current DCC
+        :param args: list
+        :param kwargs: dict
+        """
+
+        raise NotImplementedError('Data of type "{}" does not support export operation'.format(self.DATA_TYPE))
 
     def write_lines(self, lines, append=True):
         """

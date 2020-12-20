@@ -17,6 +17,7 @@ from tpDcc.managers import resources
 from tpDcc.libs.resources.core import theme, color as qt_color, pixmap as qt_pixmap, icon as qt_icon
 from tpDcc.libs.qt.widgets import messagebox, action
 
+from tpDcc.libs.datalibrary.core import consts
 from tpDcc.libs.datalibrary.widgets import preview
 from tpDcc.libs.datalibrary.core.views import dataitem
 
@@ -27,12 +28,6 @@ class FolderItemView(dataitem.DataItemView):
     LOAD_WIDGET_CLASS = preview.PreviewWidget
 
     DEFAULT_THUMBNAIL_NAME = 'folder.png'
-
-    DEFAULT_ICONS = [
-        'folder', 'user', 'character', 'inbox', 'favorite_folder', 'movie', 'camera', 'asset', 'assets', 'cloud',
-        'book', 'archive_folder', 'archive', 'circle', 'share', 'tree', 'mountain', 'trash', 'layers', 'database',
-        'video', 'face', 'hand', 'globe'
-    ]
 
     _THUMBNAIL_ICON_CACHE = dict()
 
@@ -59,7 +54,7 @@ class FolderItemView(dataitem.DataItemView):
         name = name.strip()
         path = os.path.join(path, name)
         item_view = library_window.factory.create_view(item_class, path, data=None, library=library_window.library())
-        valid_save = item_view.item.safe_save()
+        valid_save = item_view.item.save()
         if not valid_save:
             return
 
@@ -91,7 +86,7 @@ class FolderItemView(dataitem.DataItemView):
 
         color = self.icon_color()
         if not color:
-            color = self.DEFAULT_ICON_COLOR
+            color = consts.DEFAULT_FOLDER_ICON_COLOR
 
         icon_key = custom_path + color
 
@@ -126,21 +121,21 @@ class FolderItemView(dataitem.DataItemView):
 
         super(FolderItemView, self).context_edit_menu(menu, items=items)
 
-        show_preview_action = QAction(resources.icon('preview'), 'Show in Preview', menu)
-        show_preview_action.triggered.connect(self._on_show_preview_from_menu)
-        menu.addAction(show_preview_action)
-        menu.addSeparator()
-        color_picker_action = action.ColorPickerAction(menu)
-        color_picker_action.picker().set_colors(self.DEFAULT_ICON_COLORS)
-        color_picker_action.picker().colorChanged.connect(self.set_icon_color)
-        color_picker_action.picker().set_current_color(self.icon_color())
-        menu.addAction(color_picker_action)
-        icon_name = self.item.data.get('icon', '')
-        icon_picker_action = action.IconPickerAction(menu)
-        icon_picker_action.picker().set_icons(self.DEFAULT_ICONS)
-        icon_picker_action.picker().set_current_icon(icon_name)
-        icon_picker_action.picker().iconChanged.connect(self.set_custom_icon)
-        menu.addAction(icon_picker_action)
+        # show_preview_action = QAction(resources.icon('preview'), 'Show in Preview', menu)
+        # show_preview_action.triggered.connect(self._on_show_preview_from_menu)
+        # menu.addAction(show_preview_action)
+        # menu.addSeparator()
+        # color_picker_action = action.ColorPickerAction(menu)
+        # color_picker_action.picker().set_colors(consts.DEFAULT_FOLDER_ICON_COLORS)
+        # color_picker_action.picker().colorChanged.connect(self.set_icon_color)
+        # color_picker_action.picker().set_current_color(self.icon_color())
+        # menu.addAction(color_picker_action)
+        # icon_name = self.item.data.get('icon', '')
+        # icon_picker_action = action.IconPickerAction(menu)
+        # icon_picker_action.picker().set_icons(consts.DEFAULT_FOLDER_ICONS)
+        # icon_picker_action.picker().set_current_icon(icon_name)
+        # icon_picker_action.picker().iconChanged.connect(self.set_custom_icon)
+        # menu.addAction(icon_picker_action)
 
         # color_picker_action.setVisible(False)
         # icon_picker_action.setVisible(False)

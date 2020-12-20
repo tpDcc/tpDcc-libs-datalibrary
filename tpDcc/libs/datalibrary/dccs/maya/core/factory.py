@@ -9,11 +9,33 @@ from __future__ import print_function, division, absolute_import
 
 from tpDcc.libs.datalibrary.core import factory
 from tpDcc.libs.datalibrary.dccs.maya.data import mayaascii, mayabinary
+from tpDcc.libs.datalibrary.dccs.maya.data.views import mayaascii as mayaascii_view
 
 
 class MayaItemsFactory(factory.BaseItemsFactory):
 
-    pass
+    def get_view_class_from_item_class(self, item_class):
+
+        item_view_class = None
+        if item_class == mayaascii.MayaAsciiData:
+            item_view_class = mayaascii_view.MayaAsciiItemView
+
+        if item_view_class:
+            return item_view_class
+
+        return super(MayaItemsFactory, self).get_view_class_from_item_class(item_class)
+
+    def get_view_class_from_item(self, item):
+
+        item_view_class = None
+        if isinstance(item, mayaascii.MayaAsciiData):
+            item_view_class = mayaascii_view.MayaAsciiItemView
+
+        if item_view_class:
+            return item_view_class
+
+        return super(MayaItemsFactory, self).get_view_class_from_item(item)
+
 
     # def get_view_class_from_item_class(self, item_class):
     #     if item_class == mayaascii.MayaAsciiData:

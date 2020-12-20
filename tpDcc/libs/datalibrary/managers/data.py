@@ -7,6 +7,7 @@ Module that contains data manager implementation
 
 from __future__ import print_function, division, absolute_import
 
+import sys
 import inspect
 import logging
 import pkgutil
@@ -95,10 +96,16 @@ def _load_data_items(directory):
     if not directory or not path_utils.is_dir(directory):
         return imported
 
+    directory = path_utils.clean_path(directory)
+    if directory not in sys.path:
+        sys.path.append(directory)
+
     module_name = modules.convert_to_dotted_path(directory)
+    if not module_name:
+        return imported
 
     for importer, sub_mod_name, is_pkg in pkgutil.walk_packages([directory]):
-        import_path = '{}.{}'.format(module_name, sub_mod_name)
+        import_path = '{}.{}'.format(module_name, sub_mod_name) if module_name else sub_mod_name
         module = importlib.import_module(import_path)
         # Important to allow inspect to retrieve classes from given module
         importer.find_module(sub_mod_name).load_module(sub_mod_name)

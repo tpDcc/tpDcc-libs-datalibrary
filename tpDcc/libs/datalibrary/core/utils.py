@@ -507,6 +507,7 @@ def copy_path(source, target, force=False):
     if not force and os.path.exists(target):
         raise IOError('Cannot copy over an existing path: {}'.format(target))
 
+    # TODO: Check whether or not the folder can be removed
     if force and os.path.exists(target):
         if os.path.isdir(target):
             shutil.rmtree(target)

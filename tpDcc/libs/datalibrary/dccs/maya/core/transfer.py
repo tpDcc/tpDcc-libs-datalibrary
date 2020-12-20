@@ -64,7 +64,7 @@ class MayaTransferObject(transfer.BaseTransferObject):
         self.set_metadata('ctime', ctime)
         self.set_metadata("version", str(__version__.get_version()))
         self.set_metadata('references', references)
-        self.set_metadata('mayaVersion', str(dcc.client().get_version())),
+        self.set_metadata('mayaVersion', str(dcc.client().get_version()))
         self.set_metadata('mayaSceneFile', dcc.client().scene_name())
 
         metadata = {'metadata': self.metadata()}

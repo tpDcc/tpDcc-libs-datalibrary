@@ -51,7 +51,6 @@ class BaseTransferObject(object):
     # ABSTRACT FUNCTIONS
     # ============================================================================================================
 
-    @decorators.abstractmethod
     def load(self, *args, **kwargs):
         """
         Loads transfer object data
@@ -60,7 +59,7 @@ class BaseTransferObject(object):
         :param kwargs:
         """
 
-        pass
+        self.read()
 
     # ============================================================================================================
     # CLASS METHODS

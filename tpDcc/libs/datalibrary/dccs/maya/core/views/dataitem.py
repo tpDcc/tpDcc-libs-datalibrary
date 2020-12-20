@@ -64,7 +64,7 @@ class MayaDataItemView(base.BaseDataItemView):
         :return: list(str) or None
         """
 
-        return self.current_load_value('namespaces')
+        return self.item.current_load_value('namespaces')
 
     def namespace_option(self):
         """
@@ -72,7 +72,7 @@ class MayaDataItemView(base.BaseDataItemView):
         :return: NamespaceOption or None
         """
 
-        return self.current_load_value('namespaceOption')
+        return self.item.current_load_value('namespaceOption')
 
     def show_selection_sets_menu(self, **kwargs):
         """

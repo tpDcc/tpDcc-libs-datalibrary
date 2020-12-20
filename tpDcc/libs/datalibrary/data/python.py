@@ -68,6 +68,20 @@ class PythonScriptData(base.BaseDataItem):
         if not lines:
             return
 
-        self.write_lines(lines=lines, append=True)
+        fileio.write_lines(file_path, lines, append=True)
 
         return file_path
+
+    def load(self, *args, **kwargs):
+        """
+        Loads the data from the transfer object
+        :param args: list
+        :param kwargs: dict
+        """
+
+        LOGGER.debug('Loading: {}'.format(self.path))
+
+        if self.path and os.path.isfile(self.path):
+            return fileio.get_file_lines(self.path)
+
+        LOGGER.debug('Loaded: {}'.format(self.path))

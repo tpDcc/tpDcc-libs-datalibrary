@@ -111,10 +111,12 @@ class DataItemView(item.ItemView):
         :return: str
         """
 
-        if not self.path():
+        item_path = self.path()
+        if not item_path:
             return self._default_thumbnail_path
 
-        thumbnail_path = self.path() + '/{}'.format(consts.ITEM_DEFAULT_THUMBNAIL_NAME)
+        thumbnail_path = os.path.dirname(item_path) if os.path.isfile(item_path) else item_path
+        thumbnail_path = path_utils.join_path(thumbnail_path, consts.ITEM_DEFAULT_THUMBNAIL_NAME)
         if os.path.isfile(thumbnail_path):
             return thumbnail_path
 
@@ -163,6 +165,14 @@ class DataItemView(item.ItemView):
         """
 
         return self._item.id
+
+    def name(self):
+        """
+        Returns name of the item
+        :return: str
+        """
+
+        return self._item.name
 
     def path(self):
         """
@@ -265,7 +275,7 @@ class DataItemView(item.ItemView):
         widget = None
 
         if self.LOAD_WIDGET_CLASS:
-            widget = self.LOAD_WIDGET_CLASS(item=self)
+            widget = self.LOAD_WIDGET_CLASS(item_view=self)
 
         return widget
 
@@ -367,6 +377,10 @@ class DataItemView(item.ItemView):
         target = QFileDialog.getExistingDirectory(parent, 'Move To ...', path)
         if target:
             try:
+                source = self.item.path if not self.item.TRANSFER_BASENAME or \
+                                          not self.item.TRANSFER_CLASS else self.item.get_directory()
+                if os.path.isdir(source):
+                    target = path_utils.join_path(target, os.path.basename(source))
                 self.item.move(target)
             except Exception as exc:
                 self.show_exception_dialog('Move Error', exc, traceback.format_exc())
@@ -380,10 +394,12 @@ class DataItemView(item.ItemView):
         button = self.show_question_dialog('Delete Item', 'Are you sure you want to delete this item?')
         if button == QDialogButtonBox.Yes:
             try:
-                self.item.delete()
+                self.item.delete(sync=True)
             except Exception as exc:
                 self.show_exception_dialog('Delete Error', exc, traceback.format_exc())
                 raise
+
+        self.library_window().set_preview_widget_from_item(None)
 
     def show_already_existing_dialog(self):
         """
@@ -586,6 +602,6 @@ class DataItemView(item.ItemView):
         if self.library_window():
             self.library_window().sync()
 
-    def _on_item_renamed_on_item_deleted(self):
+    def _on_item_deleted(self):
         if self.library_window():
             self.library_window().sync()

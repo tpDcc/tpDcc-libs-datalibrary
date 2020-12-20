@@ -17,8 +17,8 @@ from tpDcc.libs.datalibrary.dccs.maya.menus import sets
 
 
 class MayaSaveWidget(save.BaseSaveWidget):
-    def __init__(self, item, *args, **kwargs):
-        super(MayaSaveWidget, self).__init__(item_view=item, *args, **kwargs)
+    def __init__(self, item_view, *args, **kwargs):
+        super(MayaSaveWidget, self).__init__(item_view=item_view, *args, **kwargs)
 
     # ============================================================================================================
     # OVERRIDES

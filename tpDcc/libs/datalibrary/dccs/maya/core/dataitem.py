@@ -7,9 +7,13 @@ Module that contains library data item implementation for Maya
 
 from __future__ import print_function, division, absolute_import
 
+import logging
+
 from tpDcc import dcc
 from tpDcc.core import dcc as core_dcc
 from tpDcc.libs.datalibrary.core import base
+
+LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
 
 
 class MayaDataItem(base.BaseDataItem):
@@ -70,7 +74,7 @@ class MayaDataItem(base.BaseDataItem):
         namespace_option = options.get('namespaceOption')
 
         if namespace_option == 'From file':
-            namespaces = self.transfer_object.namespaces()
+            namespaces = self.transfer_object().namespaces()
         elif namespace_option == 'From selection':
             namespaces = dcc.list_namespaces_from_selection() or ['']
 

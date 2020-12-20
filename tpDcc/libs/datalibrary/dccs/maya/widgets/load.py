@@ -16,8 +16,8 @@ from tpDcc.libs.datalibrary.widgets import load
 
 
 class MayaLoadWidget(load.BaseLoadWidget):
-    def __init__(self, item, *args, **kwargs):
-        super(MayaLoadWidget, self).__init__(item_view=item, *args, **kwargs)
+    def __init__(self, item_view, *args, **kwargs):
+        super(MayaLoadWidget, self).__init__(item_view=item_view, *args, **kwargs)
 
     # ============================================================================================================
     # OVERRIDES
@@ -29,14 +29,14 @@ class MayaLoadWidget(load.BaseLoadWidget):
         self._selection_set_button = buttons.BaseButton(parent=self)
         self._selection_set_button.setIcon(resources.icon('group_objects'))
 
-        self._export_btn = buttons.BaseButton('Export', parent=self)
-        self._export_btn.setIcon(resources.icon('export'))
         self._import_btn = buttons.BaseButton('Import', parent=self)
         self._import_btn.setIcon(resources.icon('import'))
         self._reference_btn = buttons.BaseButton('Reference', parent=self)
         self._reference_btn.setIcon(resources.icon('reference'))
+        self._export_btn = buttons.BaseButton('Export', parent=self)
+        self._export_btn.setIcon(resources.icon('export'))
 
-        for btn in [self._export_btn, self._import_btn, self._reference_btn]:
+        for btn in [self._import_btn, self._reference_btn, self._export_btn]:
             btn.setToolTip(btn.text())
 
         extra_buttons_frame = QFrame(self)
@@ -53,6 +53,9 @@ class MayaLoadWidget(load.BaseLoadWidget):
         super(MayaLoadWidget, self).setup_signals()
 
         self._selection_set_button.clicked.connect(self._on_show_selection_sets_menu)
+        self._import_btn.clicked.connect(self._on_import)
+        self._reference_btn.clicked.connect(self._on_reference)
+        self._export_btn.clicked.connect(self._on_export)
 
     # ============================================================================================================
     # CALLBACKS
@@ -65,3 +68,24 @@ class MayaLoadWidget(load.BaseLoadWidget):
 
         item = self.item()
         item.show_selection_sets_menu()
+
+    def _on_import(self):
+        """
+        Internal callback function that is called when Import button is pressed by the user
+        """
+
+        self.item().import_from_current_values()
+
+    def _on_reference(self):
+        """
+        Internal callback function that is called when Reference button is pressed by the user
+        """
+
+        self.item().reference_from_current_values()
+
+    def _on_export(self):
+        """
+        Internal callback function that is called when Export button is pressed by the user
+        """
+
+        self.item().export_from_current_values()

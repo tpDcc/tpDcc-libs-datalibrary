@@ -31,7 +31,7 @@ class DataItem(item.BaseItem):
     ICON_NAME = consts.ITEM_DEFAULT_MENU_ICON
     MENU_ORDER = consts.ITEM_DEFAULT_MENU_ORDER
 
-    ENABLE_DELETE = False
+    ENABLE_DELETE = True
     ENABLE_NESTED_ITEMS = False
 
     TRANSFER_CLASS = transfer.TransferObject()
@@ -42,7 +42,8 @@ class DataItem(item.BaseItem):
     saved = Signal(object)
     saving = Signal(str)
     copied = Signal(object, str, str)
-    renamed = Signal(object, str, str)
+    renamed = Signal(str, str)
+    moved = Signal(str, str)
     deleted = Signal(object)
     loaded = Signal(object)
 
@@ -94,16 +95,6 @@ class DataItem(item.BaseItem):
     def metadata(self, value):
         self._metadata = value
         self.metaDataChanged.emit(self._metadata)
-
-    @property
-    def transfer_object(self):
-
-        if not self._transfer_object:
-            path = self.transfer_path()
-            force_creation = not bool(os.path.isfile(path))
-            self._transfer_object = self.TRANSFER_CLASS.from_path(path, force_creation=force_creation)
-
-        return self._transfer_object
 
     # =================================================================================================================
     # OVERRIDES
@@ -180,6 +171,19 @@ class DataItem(item.BaseItem):
         """
 
         return data_type == cls.DATA_TYPE
+
+    def transfer_object(self, save=False):
+
+        if not self.TRANSFER_CLASS or not self.TRANSFER_BASENAME:
+            return None
+
+        if not self._transfer_object:
+            path = self.transfer_path(save=save)
+            force_creation = not bool(os.path.isfile(path))
+            self._transfer_object = self.TRANSFER_CLASS.from_path(path, force_creation=force_creation)
+
+        return self._transfer_object
+
 
     # =================================================================================================================
     # METADATA
@@ -313,7 +317,7 @@ class DataItem(item.BaseItem):
     # TRANSFER OBJECT
     # ============================================================================================================
 
-    def transfer_path(self):
+    def transfer_path(self, save=False):
         """
         Returns the disk location to transfer path
         :return: str
@@ -321,9 +325,8 @@ class DataItem(item.BaseItem):
 
         # NOTE: Here we use path instead of get_directory because when a transfer file is created the path points
         # to the temporal directory where the transfer file will be created
-        # TODO: Improve this to be able to remove this "hacky" comment
         if self.TRANSFER_BASENAME and self.TRANSFER_CLASS:
-            return os.path.join(self.path, self.TRANSFER_BASENAME)
+            return os.path.join(self.path if save else self.get_directory(), self.TRANSFER_BASENAME)
 
         return None
 
@@ -331,18 +334,30 @@ class DataItem(item.BaseItem):
     # COPY / RENAME
     # ============================================================================================================
 
-    def copy(self, target):
+    def copy(self, target, replace=False, sync=False):
         """
         Makes a copy/duplicate the current item to the given destination
         :param target: str
         """
 
         source = self.path if not self.TRANSFER_BASENAME or not self.TRANSFER_CLASS else self.get_directory()
-        target = utils.copy_path(source, target)
+        target = utils.copy_path(source, target, force=replace)
         if self.library:
             # NOTE: In the library we always path the full path of the file/folder
             self.library.copy_path(self.path, target)
+
+        if self.TRANSFER_BASENAME and self.TRANSFER_CLASS:
+            if os.path.isdir(target):
+                target_name = '{}{}'.format(os.path.basename(target), self.EXTENSION)
+                old_file_path = path_utils.join_path(target, self.full_name)
+                new_file_path = path_utils.join_path(target, target_name)
+                if old_file_path != new_file_path:
+                    utils.rename_path(old_file_path, new_file_path)
+
         self.copied.emit(self, source, target)
+
+        if sync and self.library:
+            self.library.sync(progress_callback=None)
 
         return target
 
@@ -354,10 +369,46 @@ class DataItem(item.BaseItem):
         """
 
         source = self.path if not self.TRANSFER_BASENAME or not self.TRANSFER_CLASS else self.get_directory()
-        if os.path.dirname(source):
-            target = os.path.join(target, os.path.basename(source))
 
-        self.rename(target, sync=sync)
+        # TODO: Check tests. This is not valid.
+        # if os.path.isdir(source):
+        #     target = path_utils.clean_path(os.path.join(target, self.name))
+
+        library = self.library
+
+        extension = self.EXTENSION
+        if target and extension and extension not in target:
+            target += extension
+
+        source = self.path
+        if self.TRANSFER_BASENAME and self.TRANSFER_CLASS:
+            target_path = target
+            target_no_extension = os.path.splitext(target)[0]
+            data_folder = self.get_directory()
+            renamed_folder = utils.rename_path(data_folder, target_no_extension)
+            if library:
+                library.rename_path(data_folder, target_no_extension)
+            new_path = path_utils.join_path(renamed_folder, os.path.basename(target_path))
+            if os.path.basename(target_path) != os.path.basename(source):
+                old_path = path_utils.join_path(renamed_folder, os.path.basename(source))
+                target_path = utils.rename_path(old_path, new_path)
+            else:
+                target_path = new_path
+        else:
+            target_path = utils.rename_path(source, target)
+            if library:
+                library.rename_path(source, target_path)
+
+        self.path = target_path
+
+        self.sync_item_data()
+
+        self.moved.emit(source, target_path)
+
+        if sync and self.library:
+            self.library.sync(progress_callback=None)
+
+        return target_path
 
     def rename(self, target, extension=None, sync=False):
         """
@@ -381,18 +432,21 @@ class DataItem(item.BaseItem):
         if self.TRANSFER_BASENAME and self.TRANSFER_CLASS:
             target_no_extension = os.path.splitext(target)[0]
             data_folder = self.get_directory()
-            utils.rename_path(data_folder, target_no_extension)
+            renamed_folder = utils.rename_path(data_folder, target_no_extension)
             if library:
                 library.rename_path(data_folder, target_no_extension)
+            target_path = path_utils.join_path(renamed_folder, os.path.basename(target_path))
 
         self.path = target_path
 
         self.sync_item_data()
 
-        self.renamed.emit(self, source, target_path)
+        self.renamed.emit(source, target_path)
 
         if sync and self.library:
             self.library.sync(progress_callback=None)
+
+        return target_path
 
     def delete(self, sync=False):
         """

@@ -78,7 +78,7 @@ class BaseDataItemView(dataitem.DataItemView):
             item_view = library_window.factory.create_view(
                 item_class, item_path, data=None, library=library_window.library())
 
-        widget = cls.SAVE_WIDGET_CLASS(item=item_view, parent=library_window)
+        widget = cls.SAVE_WIDGET_CLASS(item_view=item_view, parent=library_window)
         widget.set_folder_path(item_path)
         widget.set_library_window(library_window)
         library_window.set_create_widget(widget)
@@ -102,7 +102,7 @@ class BaseDataItemView(dataitem.DataItemView):
         menu.addAction(self._select_content_action)
         menu.addSeparator()
 
-        dataitem.DataItemView.context_menu(self, menu, items=items)
+        super(BaseDataItemView, self).context_menu(menu, items=items)
 
     # ============================================================================================================
     # BASE

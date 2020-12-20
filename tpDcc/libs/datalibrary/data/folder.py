@@ -14,7 +14,7 @@ from Qt.QtCore import QLocale, QFileInfo
 
 from tpDcc.libs.python import folder as folder_utils
 
-from tpDcc.libs.datalibrary.core import dataitem
+from tpDcc.libs.datalibrary.core import consts, dataitem
 
 LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
 
@@ -31,16 +31,6 @@ class FolderData(dataitem.DataItem):
 
     ENABLE_NESTED_ITEMS = True
     ENABLE_DELETE = True
-
-    DEFAULT_ICON_COLOR = 'rgb(150, 150, 150, 100)'
-    DEFAULT_ICON_COLORS = [
-        "rgb(239, 112, 99)",
-        "rgb(239, 207, 103)",
-        "rgb(136, 200, 101)",
-        "rgb(111, 183, 239)",
-        "rgb(199, 142, 220)",
-        DEFAULT_ICON_COLOR
-    ]
 
     TRANSFER_BASENAME = None
     TRANSFER_CLASS = None
@@ -65,7 +55,7 @@ class FolderData(dataitem.DataItem):
         :param color_string: str
         """
 
-        if color_string == self.DEFAULT_COLOR_ICON:
+        if color_string == consts.DEFAULT_FOLDER_ICON_COLOR:
             color_string = ''
 
         self.update_metadata({'color': color_string})
@@ -184,7 +174,7 @@ class FolderData(dataitem.DataItem):
                 'value': self.icon_color(),
                 'layout': 'vertical',
                 'label': {'visible': False},
-                'colors': self.DEFAULT_ICON_COLORS
+                'colors': consts.DEFAULT_FOLDER_ICON_COLORS
             },
             {
                 'name': 'icon',

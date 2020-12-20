@@ -325,6 +325,7 @@ class LibraryWindow(base.BaseWidget):
             return
 
         self._library = library
+        self._library.set_library_window(self)
         self._library.dataChanged.connect(self.refresh)
         self._library.searchTimeFinished.connect(self._on_search_finished)
 

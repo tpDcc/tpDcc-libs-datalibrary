@@ -55,3 +55,19 @@ LIST_DEFAULT_DRAG_THRESHOLD = 10
 
 TREE_MINIMUM_WIDTH = 5
 TREE_DEFAULT_WIDTH = 100
+
+DEFAULT_FOLDER_ICON_COLOR = 'rgb(150, 150, 150, 100)'
+DEFAULT_FOLDER_ICON_COLORS = [
+    "rgb(239, 112, 99)",
+    "rgb(239, 207, 103)",
+    "rgb(136, 200, 101)",
+    "rgb(111, 183, 239)",
+    "rgb(199, 142, 220)",
+    DEFAULT_FOLDER_ICON_COLOR
+]
+
+DEFAULT_FOLDER_ICONS = [
+    'folder', 'user', 'character', 'inbox', 'favorite_folder', 'movie', 'camera', 'asset', 'assets', 'cloud',
+    'book', 'archive_folder', 'archive', 'circle', 'share', 'tree', 'mountain', 'trash', 'layers', 'database',
+    'video', 'face', 'hand', 'globe'
+]

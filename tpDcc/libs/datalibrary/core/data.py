@@ -9,77 +9,18 @@ from __future__ import print_function, division, absolute_import
 
 import os
 import json
-import uuid
 import logging
-from collections import OrderedDict
 
 from tpDcc.dcc import dialog
-from tpDcc.libs.python import decorators, path, fileio, folder, settings
+from tpDcc.libs.python import decorators, path, folder
 
 LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
-
-
-class DataTypes(object):
-    """
-    Class that defines different data types supported by DCCs
-    """
-
-    Unknown = 'Unknown'
-    JSON = 'JSON'
-
-
-class DataExtensions(object):
-    """
-    Class that defines different data extensions supported by DCCs
-    """
-
-    FileDataExtension = 'data'
 
 
 class Data(object):
     """
     Base class for data objects that includes functions for save and load data
     """
-
-    def __init__(self, name=None, data_id=None):
-        self._data = OrderedDict()
-        self._id = data_id or uuid.uuid4()
-        self.file_filter = 'All Files (*.*)'
-        self._name = name
-        if not name:
-            self._name = self.get_data_title()
-
-    @property
-    def id(self):
-        return self._id
-
-    @property
-    def name(self):
-        return self._name
-
-    @name.setter
-    def name(self, new_name):
-        self._name = new_name
-
-    @staticmethod
-    def get_data_type():
-        """
-        This function should be override in each derived data class
-        Returns the data of type
-        :return: str
-        """
-
-        return DataTypes.Unknown
-
-    @classmethod
-    def is_type_match(cls, data_type):
-        """
-        Returns whether the given type is the same type of the file or not
-        :param data_type: str
-        :return: bool
-        """
-
-        return data_type == cls.get_data_type()
 
     @decorators.abstractmethod
     def build_data(self):
@@ -97,70 +38,15 @@ class Data(object):
 
         pass
 
-    def set_name(self, new_name):
-        """
-        Set the name of the data
-        """
-
-        self._name = new_name
-
-    def get_data_name(self):
-        """
-        Returns the name of the data
-        :return: str
-        """
-
-        return self._name
-
-    def get_data_title(self):
-        """
-        This function should be override in each derived data class
-        Returns the title used by the data
-        :return:
-        """
-
-        return self.name or 'Unknown Data'
-
-    def reset(self):
-        """
-        Reset data object
-        """
-
-        self.__init__()
-
 
 class FileData(Data, object):
     """
     Class used to define data stored in disk files
     """
 
-    SETTINGS_FILE = 'data.json'
-
     def __init__(self, name=None, path=None):
-        super(FileData, self).__init__(name=name)
-
-        if self._name:
-            data_extension = self.get_data_extension()
-            if not data_extension.startswith('.'):
-                data_extension = '.{}'.format(data_extension)
-            if self._name.endswith(data_extension):
-                self._name = self._name.replace(data_extension, '')
-
-        self.extension = self.get_data_extension()
-        self.directory = path
-        self.settings = settings.JSONSettings()
         self.file = None
         self._sub_folder = None
-
-    @staticmethod
-    def get_data_extension():
-        """
-        Returns extension of the file
-        Should be override on derived classes
-        :return: str
-        """
-
-        return DataExtensions.FileDataExtension
 
     def set_directory(self, directory):
         """
@@ -183,13 +69,6 @@ class FileData(Data, object):
             self.file_path = path.join_path(directory, '{}.{}'.format(self.name, self.extension))
         else:
             self.file_path = path.join_path(directory, self.name)
-
-    def create(self):
-        """
-        Creates file
-        """
-
-        self.file = fileio.create_file(filename='{}.{}'.format(self.name, self.extension), directory=self.directory)
 
     def get_file(self):
         """
