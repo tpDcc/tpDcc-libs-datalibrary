@@ -1,10 +1,10 @@
-INSERT INTO tags (tag)
+INSERT OR IGNORE INTO tags (tag)
 SELECT '$(TAG)'
 WHERE NOT EXISTS(
   SELECT 1 FROM tags WHERE tag='$(TAG)'
 );
 
-INSERT INTO
+INSERT OR IGNORE INTO
   map_tags(element_id, tag_id)
 SELECT
     (

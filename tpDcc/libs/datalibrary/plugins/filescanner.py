@@ -1,13 +1,17 @@
 import os
+import time
+import locale
+import getpass
+from collections import OrderedDict
 
-from tpDcc.libs.python import path as path_utils
+from tpDcc.libs.python import python, fileio, path as path_utils
 
 from tpDcc.libs.datalibrary.core import scanner
 
 
 class FileScannerPlugin(scanner.BaseScanner):
 
-    scan_type = 'file_scanner'
+    SCAN_TYPE = 'file_scanner'
 
     @classmethod
     def can_represent(cls, location):
@@ -33,8 +37,15 @@ class FileScannerPlugin(scanner.BaseScanner):
         :return: generator
         """
 
+        location = path_utils.clean_path(location)
+        if not skip_pattern or not skip_pattern.search(location):
+            yield location
+
         if recursive:
             for root, _, files in os.walk(location):
+                root = path_utils.clean_path(root)
+                if not skip_pattern or not skip_pattern.search(root):
+                    yield root
                 for file_name in files:
                     result = path_utils.clean_path(os.path.join(root, file_name))
                     if not skip_pattern or not skip_pattern.search(result):
@@ -98,3 +109,22 @@ class FileScannerPlugin(scanner.BaseScanner):
             return cls.ScanStatus.NOT_VALID
 
         return cls.ScanStatus.VALID
+
+    @classmethod
+    def fields(cls, identifier):
+
+        ctime = str(time.time()).split('.')[0]
+        user = getpass.getuser()
+        if user and python.is_python2():
+            user.decode(locale.getpreferredencoding())
+
+        name, extension = os.path.splitext(os.path.basename(identifier))
+        return OrderedDict([
+            ('name', name),
+            ('extension', extension),
+            ('directory', os.path.dirname(identifier)),
+            ('folder', os.path.isdir(identifier)),
+            ('user', user),
+            ('modified', fileio.get_last_modified_date(identifier)),
+            ('ctime', ctime)
+        ])

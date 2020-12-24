@@ -1,4 +1,4 @@
-INSERT INTO
+INSERT OR IGNORE INTO
   map_tags(element_id, tag_id)
 SELECT
     (

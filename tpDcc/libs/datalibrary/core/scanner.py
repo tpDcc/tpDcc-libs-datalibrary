@@ -11,7 +11,7 @@ class BaseScanner(object):
         # Indicates plugin identifier cannot be digested by this process any reason
         UNKNOWN = 2
 
-    scan_type = ''
+    SCAN_TYPE = ''
 
     @classmethod
     def can_represent(cls, location):

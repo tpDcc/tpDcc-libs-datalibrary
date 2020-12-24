@@ -1,16 +1,47 @@
+CREATE TABLE fields
+(
+    id INTEGER PRIMARY KEY ,
+    name TEXT NOT NULL,
+    sortable BOOLEAN,
+    groupable BOOLEAN
+);
+CREATE UNIQUE INDEX fields_id_uindex ON fields(id);
+
+INSERT into fields (name, sortable, groupable)
+VALUES ('icon', FALSE, FALSE),
+       ('name', TRUE, FALSE),
+       ('directory', TRUE, FALSE),
+       ('type', TRUE, TRUE),
+       ('extension', TRUE, TRUE),
+       ('folder', TRUE, FALSE),
+       ('modified', TRUE, FALSE),
+       ('user', TRUE, TRUE),
+       ('ctime', TRUE, FALSE);
+
+
 CREATE TABLE elements
 (
     id INTEGER PRIMARY KEY,
-    identifier TEXT NOT NULL
+    identifier TEXT NOT NULL,
+    icon TEXT,
+    name TEXT,
+    directory TEXT,
+    type TEXT,
+    extension TEXT,
+    folder BOOLEAN,
+    user TEXT,
+    modified TIME,
+    ctime INTEGER,
+    metadata TEXT
 );
-CREATE UNIQUE INDEX elements_identifier_uindex ON elements (identifier);
+CREATE UNIQUE INDEX elements_id_uindex ON elements(id);
+CREATE UNIQUE INDEX elements_identifier_uindex ON elements(identifier);
 
 CREATE TABLE tags
 (
     id INTEGER PRIMARY KEY,
     tag TEXT NOT NULL
 );
-
 CREATE UNIQUE INDEX tags_id_uindex ON tags (id);
 CREATE UNIQUE INDEX tags_tag_uindex ON tags (tag);
 

@@ -1,4 +1,3 @@
--- DONE
 SELECT *
 FROM (
   SELECT *
