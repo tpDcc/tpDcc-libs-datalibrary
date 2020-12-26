@@ -15,7 +15,9 @@ import logging
 
 from tpDcc import dcc
 from tpDcc.core import dcc as core_dcc
+
 from tpDcc.libs.datalibrary.core import datapart
+from tpDcc.libs.datalibrary.dccs.maya.core import utils
 
 LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
 
@@ -38,6 +40,10 @@ class MayaAsciiData(datapart.DataPart):
         return False
 
     @classmethod
+    def supported_dccs(cls):
+        return [core_dcc.Dccs.Maya]
+
+    @classmethod
     def menu_name(cls):
         return 'Maya ASCII'
 
@@ -50,8 +56,97 @@ class MayaAsciiData(datapart.DataPart):
     def type(self):
         return 'Maya ASCII'
 
-    def supported_dccs(self):
-        return [core_dcc.Dccs.Maya]
+    def save_schema(self):
+        """
+        Returns the schema used for saving the item
+        :return: dict
+        """
+
+        return [
+            {
+                'name': 'folder',
+                'type': 'path',
+                'layout': 'vertical',
+                'visible': False
+            },
+            {
+                "name": "name",
+                "type": "string",
+                "layout": "vertical"
+            },
+            {
+                "name": "objects",
+                "type": "objects",
+                "layout": "vertical"
+            }
+        ]
+
+    def load_schema(self):
+
+        return [
+            {
+                'name': 'namespaceGroup',
+                'title': 'Namespace',
+                'type': 'group',
+                'order': 10,
+            },
+            {
+                'name': 'namespaceOption',
+                'title': '',
+                'type': 'radio',
+                'value': 'From file',
+                'items': ['From file', 'From selection', 'Use custom'],
+                'persistent': True,
+                'persistentKey': 'MayaAsciiData',
+            },
+            {
+                'name': 'namespaces',
+                'title': '',
+                'type': 'tags',
+                'value': [],
+                'items': dcc.client().list_namespaces(),
+                'persistent': True,
+                'label': {'visible': False},
+                'persistentKey': 'MayaAsciiData'
+            }
+        ]
+
+    def load_validator(self, **options):
+        namespaces = options.get('namespaces')
+        namespace_option = options.get('namespaceOption')
+
+        if namespace_option == 'From file':
+            namespaces = self.metadata().get('namespaces', list())
+        elif namespace_option == 'From selection':
+            namespaces = dcc.client().list_namespaces_from_selection() or ['']
+
+        field_changed = options.get('fieldChanged')
+        if field_changed == 'namespaces':
+            options['namespaceOption'] = 'Use custom'
+        else:
+            options['namespaceOption'] = namespaces
+
+        self._current_load_values = options
+
+        return [
+            {
+                "name": "namespaces",
+                "value": options.get("namespaces")
+            },
+            {
+                "name": "namespaceOption",
+                "value": options.get("namespaceOption")
+            }
+        ]
+
+    def metadata_dict(self):
+
+        references = utils.get_reference_data(self.metadata().get('objects', list()))
+
+        return {
+            'references': references,
+            'mayaVersion': str(dcc.client().get_version())
+        }
 
     def functionality(self):
         return dict(

@@ -33,6 +33,10 @@ class MayaBinaryData(datapart.DataPart):
         return False
 
     @classmethod
+    def supported_dccs(cls):
+        return [core_dcc.Dccs.Maya]
+
+    @classmethod
     def menu_name(cls):
         return 'Maya Binary'
 
@@ -44,9 +48,6 @@ class MayaBinaryData(datapart.DataPart):
 
     def type(self):
         return 'Maya Binary'
-
-    def supported_dccs(self):
-        return [core_dcc.Dccs.Maya]
 
     def functionality(self):
         return dict(
