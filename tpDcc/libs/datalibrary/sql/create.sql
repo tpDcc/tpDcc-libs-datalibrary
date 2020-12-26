@@ -8,22 +8,21 @@ CREATE TABLE fields
 CREATE UNIQUE INDEX fields_id_uindex ON fields(id);
 
 INSERT into fields (name, sortable, groupable)
-VALUES ('icon', FALSE, FALSE),
-       ('name', TRUE, FALSE),
+VALUES ('name', TRUE, FALSE),
        ('directory', TRUE, FALSE),
        ('type', TRUE, TRUE),
        ('extension', TRUE, TRUE),
        ('folder', TRUE, FALSE),
        ('modified', TRUE, FALSE),
        ('user', TRUE, TRUE),
-       ('ctime', TRUE, FALSE);
+       ('ctime', TRUE, FALSE),
+       ('metadata', FALSE, FALSE);
 
 
 CREATE TABLE elements
 (
     id INTEGER PRIMARY KEY,
     identifier TEXT NOT NULL,
-    icon TEXT,
     name TEXT,
     directory TEXT,
     type TEXT,
