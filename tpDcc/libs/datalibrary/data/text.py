@@ -19,6 +19,7 @@ class TextData(datapart.DataPart):
     DATA_TYPE = 'txt'
     MENU_ICON = 'document'
     PRIORITY = 4
+    EXTENSION = '.txt'
 
     _has_trait = re.compile('\.txt$', re.I)
 

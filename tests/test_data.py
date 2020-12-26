@@ -11,6 +11,3 @@ from __future__ import print_function, division, absolute_import
 from tpDcc.libs.unittests.core import unittestcase
 
 from tpDcc.libs.datalibrary.core import datalib
-
-
-class TestData(unittestcase.UnitTestCase()):
