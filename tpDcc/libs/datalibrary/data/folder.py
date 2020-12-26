@@ -9,9 +9,8 @@ from __future__ import print_function, division, absolute_import
 
 import os
 import re
-from functools import partial
 
-from tpDcc.libs.python import folder
+from tpDcc.libs.python import folder, path as path_utils
 
 from tpDcc.libs.datalibrary.core import datapart
 
@@ -23,6 +22,10 @@ class FolderData(datapart.DataPart):
     PRIORITY = 2
 
     _split = re.compile('/|\.|,|-|:|_', re.I)
+
+    # ============================================================================================================
+    # OVERRIDES
+    # ============================================================================================================
 
     @classmethod
     def can_represent(cls, identifier):
@@ -42,7 +45,7 @@ class FolderData(datapart.DataPart):
         return 'folder'
 
     def type(self):
-        return 'Folder'
+        return 'folder'
 
     def mandatory_tags(self):
         tags = [
@@ -54,15 +57,74 @@ class FolderData(datapart.DataPart):
 
     def functionality(self):
         return dict(
-            save=partial(FolderData.save, self.format_identifier())
+            directory=self.directory,
+            save=self.save,
+            rename=self.rename,
+            copy=self.copy,
+            move=self.move,
+            delete=self.delete
         )
 
-    @staticmethod
-    def save(folder_path):
+    # ============================================================================================================
+    # BASE
+    # ============================================================================================================
 
-        if not folder_path or os.path.isdir(folder_path):
-            return
+    def directory(self):
+        """
+        Returns identifier directory
+        :return: str
+        """
 
-        new_folder = folder.create_folder(folder_path)
+        return path_utils.clean_path(os.path.dirname(self.format_identifier()))
+
+    def save(self):
+
+        new_folder = folder.create_folder(self.format_identifier())
 
         return os.path.isdir(new_folder)
+
+    def rename(self, new_name):
+
+        current_path = self.format_identifier()
+
+        current_name = os.path.basename(current_path)
+        if current_name == new_name:
+            return current_path
+
+        new_path = folder.rename_folder(current_path, new_name)
+        if new_path == current_path:
+            return current_path
+
+        # TODO: Instead of calling sync we should add a specific rename SQL function
+        self._db.sync()
+
+        return new_path
+
+    def copy(self, target_path):
+        current_path = self.format_identifier()
+
+        if not os.path.isdir(target_path):
+            folder.create_folder(target_path)
+
+        folder.copy_directory_contents(current_path, target_path)
+
+        # We force sync after doing copy operation
+        self._db.sync()
+
+        return target_path
+
+    def move(self, target_path):
+        current_path = self.format_identifier()
+
+        valid = folder.move_folder(current_path, target_path)
+        if not valid:
+            return None
+
+        # We force sync after doing move operation
+        self._db.sync()
+
+        return target_path
+
+    def delete(self):
+        folder.delete_folder(self.format_identifier())
+        self._db.remove(self.identifier())

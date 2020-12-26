@@ -9,7 +9,6 @@ from __future__ import print_function, division, absolute_import
 
 import os
 import re
-from functools import partial
 
 from tpDcc.libs.python import fileio, path as path_utils
 
@@ -38,7 +37,7 @@ class FileData(datapart.DataPart):
         return False
 
     def type(self):
-        return 'File'
+        return 'file'
 
     def icon(cls):
         return 'file'
@@ -48,19 +47,14 @@ class FileData(datapart.DataPart):
 
     def functionality(self):
         return dict(
-            open=partial(FileData.open, self.identifier()),
-            rename=partial(self.rename),
-            move=partial(self.move),
-            delete=partial(self.delete)
+            directory=self.directory,
+            write_lines=self.write_lines,
+            open=self.open,
+            rename=self.rename,
+            copy=self.copy,
+            move=self.move,
+            delete=self.delete
         )
-
-    # ============================================================================================================
-    # STATIC FUNCTIONS
-    # ============================================================================================================
-
-    @staticmethod
-    def open(filepath):
-        print('Opening : %s' % filepath)
 
     def mandatory_tags(self):
 
@@ -76,7 +70,24 @@ class FileData(datapart.DataPart):
         :return: str
         """
 
-        return path_utils.clean_path(os.path.dirname(self.identifier()))
+        return path_utils.clean_path(os.path.dirname(self.format_identifier()))
+
+    def write_lines(self, lines, append=True):
+        """
+        Writes a list of text lines to a file. Every entry in the list is a new line
+        :param lines: list(str), list of text lines in which each entry is a new line
+        :param append: bool, Whether to append the text or replace it
+        """
+
+        file_path = self.format_identifier()
+        if not file_path or not os.path.isfile(file_path):
+            return
+
+        return fileio.write_lines(file_path, lines, append=append)
+
+    def open(self):
+        file_path = self.format_identifier()
+        print('Opening : %s' % file_path)
 
     def delete(self):
 
@@ -109,3 +120,26 @@ class FileData(datapart.DataPart):
         fileio.move_file(self.format_identifier(), new_path)
 
         self._db.sync()
+
+    def copy(self, target_path, replace=True):
+
+        # TODO :Take into account dependencies
+
+        if not target_path:
+            return
+
+        if os.path.isfile(target_path):
+            if not replace:
+                return
+            fileio.delete_file(target_path)
+
+        _, _, file_extension = path_utils.split_path(self.format_identifier())
+        target_directory, target_name, target_extension = path_utils.split_path(target_path)
+        if target_extension != file_extension:
+            target_path = path_utils.join_path(target_directory, '{}{}'.format(target_name, file_extension))
+
+        copy_path = fileio.copy_file(self.format_identifier(), target_path)
+
+        self._db.sync()
+
+        return copy_path
