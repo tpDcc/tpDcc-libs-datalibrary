@@ -9,8 +9,14 @@ and their compositions are used to represent data
 from __future__ import print_function, division, absolute_import
 
 import os
+import json
+import logging
 
-from tpDcc.libs.python import composite
+import shortuuid
+
+from tpDcc.libs.python import fileio, composite, path as path_utils
+
+LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
 
 
 class DataPart(composite.Composition):
@@ -38,15 +44,34 @@ class DataPart(composite.Composition):
     ENABLE_DELETE = True
     ENABLE_NESTED_ITEMS = False
 
+    EXTENSION = None
+
     def __init__(self, identifier, db):
         super(DataPart, self).__init__()
 
         self._id = identifier
         self._db = db
 
+        if self.EXTENSION and not self._id.endswith(self.EXTENSION):
+            self._id = '{}{}'.format(self._id, self.EXTENSION)
+
     def __repr__(self):
         base_repr = super(DataPart, self).__repr__()
         return base_repr.replace('DataPart', 'DataPart: {}'.format(self._id))
+
+    def __eq__(self, other):
+        return self.format_identifier() == other.format_identifier()
+
+    def __ne__(self, other):
+        return self.format_identifier() != other.format_identifier()
+
+    # ============================================================================================================
+    # PROPERTIES
+    # ============================================================================================================
+
+    @property
+    def library(self):
+        return self._db
 
     # ============================================================================================================
     # ABSTRACT FUNCTIONS
@@ -61,6 +86,16 @@ class DataPart(composite.Composition):
         """
 
         return False
+
+    @classmethod
+    def supported_dccs(cls):
+        """
+        Returns a list of DCC names this data can be loaded into. In a situation where multiple DataParts are bound
+        then the combined results of all the mandatory tags are used.
+        :return: list(str) or None
+        """
+
+        return list()
 
     @classmethod
     def menu_name(cls):
@@ -160,16 +195,6 @@ class DataPart(composite.Composition):
 
         return composite.Ignore
 
-    @composite.extend_unique
-    def supported_dccs(self):
-        """
-        Returns a list of DCC names this data can be loaded into. In a situation where multiple DataParts are bound
-        then the combined results of all the mandatory tags are used.
-        :return: list(str) or None
-        """
-
-        return None
-
     @composite.extend_results
     def load_schema(self):
         """
@@ -227,7 +252,20 @@ class DataPart(composite.Composition):
         :return: str
         """
 
-        return os.path.splitext(os.path.basename(self.identifier()))[0]
+        return os.path.splitext(os.path.basename(self.format_identifier()))[0]
+
+    def full_name(self):
+        """
+        Returns data full name
+        :return: str
+        """
+
+        directory, name, extension = path_utils.split_path(self.format_identifier())
+        extension = extension or self.EXTENSION
+        if extension:
+            return path_utils.clean_path('{}{}'.format(name, extension))
+
+        return name
 
     def data(self):
         """
@@ -247,7 +285,37 @@ class DataPart(composite.Composition):
         :return: dict
         """
 
-        return self.data().get('metadata' or dict())
+        metadata_str = self.data().get('metadata', '')
+        if not metadata_str:
+            return dict()
+
+        metadata_str = metadata_str.replace("\'", "\"")
+
+        try:
+            return json.loads(metadata_str)
+        except Exception as exc:
+            LOGGER.warning('Was not possible to read item "{}" metadata: {} | {}'.format(self, metadata_str, exc))
+
+        return dict()
+
+    def set_metadata(self, metadata_dict):
+        """
+        Sets metadata data dictionary of this item
+        :param metadata_dict:
+        :return:
+        """
+        return self._db.set_metadata(self._id, metadata_dict)
+
+    def store_thumbnail(self, thumbnail_path):
+        if not os.path.isfile(thumbnail_path):
+            return None
+        _, thumb_extension = os.path.splitext(os.path.basename(thumbnail_path))
+        thumbs_path = self._db.get_thumbs_path()
+        thumb_name = '{}{}'.format(shortuuid.uuid(), thumb_extension)
+        thumb_path = path_utils.join_path(thumbs_path, thumb_name)
+        fileio.move_file(thumbnail_path, thumb_path)
+
+        return thumb_name
 
     def tags(self):
         """

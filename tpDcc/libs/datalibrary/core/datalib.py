@@ -10,7 +10,7 @@ from collections import OrderedDict
 
 from tpDcc import dcc
 from tpDcc.managers import configs
-from tpDcc.libs.python import python, signal, sqlite, plugin, modules, path as path_utils
+from tpDcc.libs.python import python, signal, sqlite, plugin, modules, path as path_utils, folder as folder_utils
 
 from tpDcc.libs.datalibrary.core import scanner, datapart
 
@@ -21,7 +21,7 @@ class DataLibrary(object):
 
     SQL_COMMANDS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'sql')
 
-    def __init__(self, identifier, load_data_plugins_from_settings=True, relative_paths=True):
+    def __init__(self, identifier, load_data_plugins_from_settings=True, relative_paths=True, thumbs_path=None):
 
         self.scanned = signal.Signal()
         self.syncCompleted = signal.Signal()
@@ -62,6 +62,10 @@ class DataLibrary(object):
     @property
     def identifier(self):
         return self._id
+
+    @property
+    def data_factory(self):
+        return self._data_factory
 
     # ============================================================================================================
     # STATIC FUNCTIONS
@@ -183,6 +187,8 @@ class DataLibrary(object):
             reverse = tokens[1] != 'asc'
 
         for item in items:
+            if not item:
+                continue
             value = item.data().get(field)
             if value:
                 results_.setdefault(value, list())
@@ -253,9 +259,18 @@ class DataLibrary(object):
         with sqlite.ConnectionContext(self._id, commit=True) as connection:
             self._execute(connection, 'create')
 
-            return True
+        # Call it, to force the creation of the thumbs folder if it does not exists
+        self.get_thumbs_path()
+
+        return True
 
     def get_identifier(self, identifier):
+        """
+        Returns proper item identifier depending of the path type (absolute or relative)
+        :param identifier: str
+        :return: str
+        """
+
         return self._get_relative_identifier(identifier) if self._relative_paths else identifier
 
     def format_identifier(self, identifier):
@@ -279,14 +294,53 @@ class DataLibrary(object):
 
         return path_utils.clean_path(os.path.dirname(self._id))
 
+    def get_thumbs_path(self):
+        """
+        Returns path where thumbnails are stored
+        :return: str
+        """
+
+        thumbs_path = self.settings().get('thumbs_path')
+        if not thumbs_path:
+            thumbs_path = path_utils.join_path(self.get_directory(), 'thumbs')
+            self.update_settings({'thumbs_path': thumbs_path})
+        if not os.path.isdir(thumbs_path):
+            os.makedirs(thumbs_path)
+
+        return thumbs_path
+
     def add(self, identifier):
         """
         Adds data identifier into data base
         :param identifier: str, data identifier
         """
 
+        identifier = self.get_identifier(identifier)
+        full_identifier = self.format_identifier(identifier)
+
+        field_names = self.field_names()
+
         with sqlite.ConnectionContext(self._id, commit=True) as connection:
-            self._execute(connection, 'add', replacements={'$(IDENTIFIER)': identifier})
+
+            for scan_plugin in self._scan_factory.plugins():
+                if not scan_plugin.can_represent(full_identifier):
+                    continue
+
+                field_values = list()
+                scanned_fields = scan_plugin.fields(full_identifier)
+                self._update_fields(full_identifier, scanned_fields)
+                for field_name in field_names:
+                    field_values.append('' if field_name not in scanned_fields else scanned_fields[field_name])
+                field_values = ','.join(
+                    "'{}'".format(field) if python.is_string(field) else str(field) for field in field_values)
+                self._execute(
+                    connection, 'add_with_fields', replacements={
+                        '$(IDENTIFIER)': identifier,
+                        '$(METADATA)': {},
+                        '$(FIELDS)': ','.join(field_names), '$(FIELDS_VALUES)': field_values})
+
+    # with sqlite.ConnectionContext(self._id, commit=True) as connection:
+    #         self._execute(connection, 'add', replacements={'$(IDENTIFIER)': identifier})
 
     def remove(self, identifier):
         """
@@ -294,9 +348,23 @@ class DataLibrary(object):
         :param identifier: str, dta identifier
         """
 
+        identifier = self.get_identifier(identifier)
+
         with sqlite.ConnectionContext(self._id, commit=True) as connection:
             self._execute(connection, 'remove', replacements={'$(IDENTIFIER)': identifier})
         self.dataChanged.emit()
+
+    def set_metadata(self, identifier, metadata_dict):
+        """
+        Sets item metadata
+        :param identifier: str
+        :param metadata_dict: dict
+        """
+
+        identifier = self.get_identifier(identifier)
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            self._execute(
+                connection, 'metadata_set', replacements={'$(IDENTIFIER)': identifier, '$(METADATA)': metadata_dict})
 
     def skip_regexes(self):
         """
@@ -347,17 +415,20 @@ class DataLibrary(object):
         dcc_name = dcc.client().get_name()
 
         for data_plugin in self._data_plugins:
+
             if data_plugin.can_represent(identifier):
+
+                # Skip data that are not supported in current DCC
+                supported_dccs = data_plugin.supported_dccs()
+                if supported_dccs:
+                    if dcc_name not in supported_dccs:
+                        break
+
                 proper_identifier = self.get_identifier(identifier)
                 template = template or datapart.DataPart(proper_identifier, db=self)
                 template.bind(data_plugin(proper_identifier, self))
 
         if not template:
-            return None
-
-        # Skip data that are not supported in current DCC
-        template_dccs = template.supported_dccs()
-        if template_dccs and dcc_name not in template_dccs:
             return None
 
         LOGGER.debug('Compounded {} to {}'.format(identifier, template))
@@ -383,7 +454,17 @@ class DataLibrary(object):
         :return:
         """
 
-        return self._data_factory.plugins(package_name=package_name)
+        dcc_name = dcc.client().get_name()
+
+        valid_plugins = list()
+        all_plugins = self._data_factory.plugins(package_name=package_name)
+        for plugin in all_plugins:
+            supported_dccs = plugin.supported_dccs()
+            if supported_dccs and dcc_name not in supported_dccs:
+                continue
+            valid_plugins.append(plugin)
+
+        return valid_plugins
 
     def explore(self, location):
         """
@@ -415,7 +496,7 @@ class DataLibrary(object):
         if progress_callback:
             progress_callback('Syncing', 0)
 
-        LOGGER.info('Starting Sync : {}'.format(locations))
+        LOGGER.debug('Starting Sync : {}'.format(locations))
 
         scanned_identifiers = list()
 
@@ -442,8 +523,7 @@ class DataLibrary(object):
                         self._execute(
                             connection, 'add_with_fields', replacements={
                                 '$(IDENTIFIER)': relative_identifier if self._relative_paths else identifier,
-                                '$(METADATA)': self._get_metadata_dict(
-                                    relative_identifier if self._relative_paths else identifier),
+                                '$(METADATA)': {},
                                 '$(FIELDS)': ','.join(field_names), '$(FIELDS_VALUES)': field_values})
                         self.scanned.emit(relative_identifier if self._relative_paths else identifier)
                         scanned_identifiers.append(relative_identifier if self._relative_paths else identifier)
@@ -493,9 +573,18 @@ class DataLibrary(object):
         end_msg = 'Sync Completed : {}'.format(locations)
         if progress_callback:
             progress_callback(end_msg, 100)
-        LOGGER.info(end_msg)
+        LOGGER.debug(end_msg)
 
         return scanned_identifiers
+
+    def clear(self):
+        """
+        Clears all the library data
+        """
+
+        self._resulst = list()
+        self._grouped_results = list()
+        self.dataChanged.emit()
 
     # ============================================================================================================
     # PATHS
@@ -701,7 +790,7 @@ class DataLibrary(object):
         """
 
         settings = self.settings()
-        settings[''] = python.force_list(fields)
+        settings['group_by'] = python.force_list(fields)
         self.save_settings(settings)
 
     def fields(self):
