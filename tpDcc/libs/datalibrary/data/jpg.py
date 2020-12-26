@@ -14,20 +14,23 @@ from functools import partial
 from tpDcc.libs.datalibrary.core import datapart
 
 
-class ImageData(datapart.DataPart):
+class JpgImageData(datapart.DataPart):
 
-    data_type = 'png'
+    DATA_TYPE = 'jpg'
     PRIORITY = 5
+    EXTENSION = '.jpg'
 
-    # TODO: Support more image file extensions
-    _has_trait = re.compile('\.png$', re.I)
+    _has_trait = re.compile('\.jpg$', re.I)
 
     @classmethod
     def can_represent(cls, identifier):
-        if ImageData._has_trait.search(identifier):
-            if os.path.exists(identifier):
+        if JpgImageData._has_trait.search(identifier):
+            if os.path.isfile(identifier):
                 return True
         return False
+
+    def type(self):
+        return 'JPG Image'
 
     def icon(self):
         return self.identifier()
