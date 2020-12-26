@@ -1,5 +1,6 @@
 # ===================================================================
 # tpDcc-libs-datalibrary requirements file
 # ===================================================================
+shortuuid
 tpDcc-libs-python
 tpDcc-core
