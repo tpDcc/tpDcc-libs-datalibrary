@@ -4,13 +4,18 @@ import sys
 import time
 import json
 import copy
+import locale
+import getpass
 import sqlite3
 import logging
 from collections import OrderedDict
 
+import shortuuid
+
 from tpDcc import dcc
 from tpDcc.managers import configs
-from tpDcc.libs.python import python, signal, sqlite, plugin, modules, path as path_utils, folder as folder_utils
+from tpDcc.libs.python import python, timedate, fileio, jsonio, signal, version, sqlite, plugin, modules
+from tpDcc.libs.python import path as path_utils, folder as folder_utils
 
 from tpDcc.libs.datalibrary.core import scanner, datapart
 
@@ -189,6 +194,17 @@ class DataLibrary(object):
         for item in items:
             if not item:
                 continue
+
+            # TODO: Maybe we should move this to a filter?
+            # Skip items that start with '.'
+            if item.name().startswith('.'):
+                continue
+            item_directory = item.data().get('directory', '')
+            if item_directory:
+                base_dir = os.path.basename(item_directory)
+                if not base_dir == '.' and base_dir.startswith('.'):
+                    continue
+
             value = item.data().get(field)
             if value:
                 results_.setdefault(value, list())
@@ -261,6 +277,8 @@ class DataLibrary(object):
 
         # Call it, to force the creation of the thumbs folder if it does not exists
         self.get_thumbs_path()
+        self.get_versions_path()
+        self.get_metadata_path()
 
         return True
 
@@ -271,7 +289,7 @@ class DataLibrary(object):
         :return: str
         """
 
-        return self._get_relative_identifier(identifier) if self._relative_paths else identifier
+        return path_utils.clean_path(self._get_relative_identifier(identifier) if self._relative_paths else identifier)
 
     def format_identifier(self, identifier):
         """
@@ -286,6 +304,15 @@ class DataLibrary(object):
         return path_utils.clean_path(
             os.path.join(self.get_directory(), identifier)) if self._relative_paths else identifier
 
+    def get_uuid(self, identifier):
+        return shortuuid.uuid(self.get_identifier(identifier))
+
+    def get_all_uuids(self):
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'find_all_uuids')
+
+        return [result[0] for result in connection.results]
+
     def get_directory(self):
         """
         Returns root path directory where data library is located
@@ -293,21 +320,6 @@ class DataLibrary(object):
         """
 
         return path_utils.clean_path(os.path.dirname(self._id))
-
-    def get_thumbs_path(self):
-        """
-        Returns path where thumbnails are stored
-        :return: str
-        """
-
-        thumbs_path = self.settings().get('thumbs_path')
-        if not thumbs_path:
-            thumbs_path = path_utils.join_path(self.get_directory(), 'thumbs')
-            self.update_settings({'thumbs_path': thumbs_path})
-        if not os.path.isdir(thumbs_path):
-            os.makedirs(thumbs_path)
-
-        return thumbs_path
 
     def add(self, identifier):
         """
@@ -336,11 +348,78 @@ class DataLibrary(object):
                 self._execute(
                     connection, 'add_with_fields', replacements={
                         '$(IDENTIFIER)': identifier,
-                        '$(METADATA)': {},
                         '$(FIELDS)': ','.join(field_names), '$(FIELDS_VALUES)': field_values})
 
     # with sqlite.ConnectionContext(self._id, commit=True) as connection:
     #         self._execute(connection, 'add', replacements={'$(IDENTIFIER)': identifier})
+
+    def rename(self, identifier, new_identifier):
+        """
+        Renames data
+        :param identifier: str
+        :param new_identifier: str
+        :return:
+        """
+
+        identifier = self.get_identifier(identifier)
+        new_identifier = self.get_identifier(new_identifier)
+
+        current_uuid = self.find_uuid(identifier)
+        if not current_uuid:
+            return
+
+        new_uuid = self.get_uuid(new_identifier)
+        new_name = os.path.splitext(os.path.basename(new_identifier))[0]
+
+        ctime = str(time.time()).split('.')[0]
+        user = getpass.getuser()
+        if user and python.is_python2():
+            user.decode(locale.getpreferredencoding())
+        modified = timedate.get_date_and_time()
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            self._execute(connection, 'rename', replacements={
+                '$(IDENTIFIER)': identifier, '$(NEW_IDENTIFIER)': new_identifier, '$(NEW_UUID)': new_uuid,
+                '$(NEW_NAME)': new_name,  '$(USER)': user,  '$(MODIFIED)': modified,  '$(CTIME)': ctime})
+
+        self.rename_metadata(current_uuid, new_uuid)
+        self.rename_thumb(current_uuid, new_uuid)
+        self.rename_version(current_uuid, new_uuid)
+
+        self.dataChanged.emit()
+
+    def move(self, identifier, new_identifier):
+        """
+        Moves data
+        :param identifier: str
+        :param new_identifier: str
+        :return:
+        """
+
+        identifier = self.get_identifier(identifier)
+        new_identifier = self.get_identifier(new_identifier)
+
+        current_uuid = self.find_uuid(identifier)
+        if not current_uuid:
+            return
+
+        new_uuid = self.get_uuid(new_identifier)
+        new_directory = self.get_identifier(os.path.dirname(new_identifier))
+
+        ctime = str(time.time()).split('.')[0]
+        user = getpass.getuser()
+        if user and python.is_python2():
+            user.decode(locale.getpreferredencoding())
+        modified = timedate.get_date_and_time()
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            self._execute(connection, 'move', replacements={
+                '$(IDENTIFIER)': identifier, '$(NEW_IDENTIFIER)': new_identifier, '$(NEW_UUID)': new_uuid,
+                '$(NEW_DIRECTORY)': new_directory, '$(USER)': user, '$(MODIFIED)': modified, '$(CTIME)': ctime})
+
+        self.rename_metadata(current_uuid, new_uuid)
+        self.rename_thumb(current_uuid, new_uuid)
+        self.rename_version(current_uuid, new_uuid)
 
     def remove(self, identifier):
         """
@@ -353,18 +432,6 @@ class DataLibrary(object):
         with sqlite.ConnectionContext(self._id, commit=True) as connection:
             self._execute(connection, 'remove', replacements={'$(IDENTIFIER)': identifier})
         self.dataChanged.emit()
-
-    def set_metadata(self, identifier, metadata_dict):
-        """
-        Sets item metadata
-        :param identifier: str
-        :param metadata_dict: dict
-        """
-
-        identifier = self.get_identifier(identifier)
-        with sqlite.ConnectionContext(self._id, commit=True) as connection:
-            self._execute(
-                connection, 'metadata_set', replacements={'$(IDENTIFIER)': identifier, '$(METADATA)': metadata_dict})
 
     def skip_regexes(self):
         """
@@ -518,49 +585,24 @@ class DataLibrary(object):
                         self._update_fields(identifier, scanned_fields)
                         for field_name in field_names:
                             field_values.append('' if field_name not in scanned_fields else scanned_fields[field_name])
-                        field_values = ','.join(
-                            "'{}'".format(field) if python.is_string(field) else str(field) for field in field_values)
+                        field_values = ','.join("'{}'".format(field) for field in field_values)
                         self._execute(
                             connection, 'add_with_fields', replacements={
                                 '$(IDENTIFIER)': relative_identifier if self._relative_paths else identifier,
-                                '$(METADATA)': {},
                                 '$(FIELDS)': ','.join(field_names), '$(FIELDS_VALUES)': field_values})
                         self.scanned.emit(relative_identifier if self._relative_paths else identifier)
                         scanned_identifiers.append(relative_identifier if self._relative_paths else identifier)
 
         if full:
-            all_tags = list()
-            mapped_tags = dict()
+            self.sync_tags(identifiers=scanned_identifiers)
+            self.sync_versions(identifiers=scanned_identifiers)
+            self.sync_metadata(identifiers=scanned_identifiers)
+            self.sync_thumbs(identifiers=scanned_identifiers)
 
-            for scanned_identifier in scanned_identifiers:
-                data = self.get(scanned_identifier)
-                if not data:
-                    continue
-
-                # Get tags for this data
-                expected_tags = data.mandatory_tags()
-                all_tags.extend(expected_tags)
-                mapped_tags[scanned_identifier] = expected_tags
-
-            with sqlite.ConnectionContext(self._id, commit=True) as connection:
-                for tag in set(all_tags):
-                    self._execute(connection, 'tag_insert', replacements={'$(TAG)': tag})
-
-            with sqlite.ConnectionContext(self._id, commit=True) as connection:
-                for scanned_identifier in scanned_identifiers:
-                    for tag in mapped_tags.get(scanned_identifier, list()):
-                        try:
-                            self._execute(connection, 'tag_connect',
-                                          replacements={'$(IDENTIFIER)': scanned_identifier, '$(TAG)': tag})
-                        except sqlite3.IntegrityError:
-                            pass
-
-            # If data cleanup is allowed, we do it
-            for identifier in self.find(None):
-                for scan_plugin in self._scan_factory.plugins():
-                    if scan_plugin.check(self.format_identifier(identifier)) == scan_plugin.ScanStatus.NOT_VALID:
-                        self.remove(identifier)
-                        break
+            self.clean_invalid_identifiers()
+            # self.clean_versions()
+            # self.clean_thumbnails()
+            # self.clean_metadata()
 
         if progress_callback:
             progress_callback('Post Callbacks', 100)
@@ -576,6 +618,13 @@ class DataLibrary(object):
         LOGGER.debug(end_msg)
 
         return scanned_identifiers
+
+    def clean_invalid_identifiers(self):
+        for identifier in self.find(None):
+            for scan_plugin in self._scan_factory.plugins():
+                if scan_plugin.check(self.format_identifier(identifier)) == scan_plugin.ScanStatus.NOT_VALID:
+                    self.remove(identifier)
+                    break
 
     def clear(self):
         """
@@ -609,11 +658,12 @@ class DataLibrary(object):
         if valid:
             self._sort_data_plugins()
 
-    def register_plugin_path(self, location):
+    def register_plugin_path(self, location, package_name=None):
         """
         Adds the given location to the list of locations being searched for when looking for plugins. This data is
         persistent between sessions and will invoke a reload of plugins
         :param location: str, plugins directory to add
+        :param package_name: str
         """
 
         settings = self.settings()
@@ -622,8 +672,8 @@ class DataLibrary(object):
         settings[key] = settings.get(key, list()) + [self._clean_path(location)]
         self.save_settings(settings)
 
-        self._scan_factory.register_path(location)
-        self._data_factory.register_path(location)
+        self._scan_factory.register_path(location, package_name=package_name)
+        self._data_factory.register_path(location, package_name=package_name)
 
         self._sort_data_plugins()
 
@@ -695,6 +745,34 @@ class DataLibrary(object):
     # TAGS
     # ============================================================================================================
 
+    def sync_tags(self, identifiers):
+
+        all_tags = list()
+        mapped_tags = dict()
+
+        for identifier in identifiers:
+            data = self.get(identifier)
+            if not data:
+                continue
+
+            # Get tags for this data
+            expected_tags = data.mandatory_tags()
+            all_tags.extend(expected_tags)
+            mapped_tags[identifier] = expected_tags
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            for tag in set(all_tags):
+                self._execute(connection, 'tag_insert', replacements={'$(TAG)': tag})
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            for identifier in identifiers:
+                for tag in mapped_tags.get(identifier, list()):
+                    try:
+                        self._execute(connection, 'tag_connect',
+                                      replacements={'$(IDENTIFIER)': identifier, '$(TAG)': tag})
+                    except sqlite3.IntegrityError:
+                        pass
+
     def tag(self, identifier, tags):
         """
         Assigns given tags to the data with the given identifier
@@ -734,6 +812,319 @@ class DataLibrary(object):
             self._execute(connection, 'tags_get', replacements={'$(IDENTIFIER)': identifier})
 
         return [str(result[0] for result in connection.results)]
+
+    # ============================================================================================================
+    # VERSIONS
+    # ============================================================================================================
+
+    def sync_versions(self, identifiers):
+
+        all_versions = dict()
+
+        identifiers = python.force_list(identifiers)
+
+        versions_path = self.get_versions_path()
+        if not versions_path or not os.path.isdir(versions_path):
+            LOGGER.warning(
+                'Impossible to sync versions because versions directory was not found: "{}"'.format(versions_path))
+            return
+
+        for identifier in identifiers:
+            identifier = self.get_identifier(identifier)
+            version_path = self.get_version_path(identifier)
+            if not version_path or not os.path.isdir(version_path):
+                continue
+
+            name = self.find_data(identifier).get(identifier, dict()).get('name')
+            version_folder_name = os.path.basename(version_path)
+            version_file = version.VersionFile(versions_path)
+            version_file.set_version_folder_name(version_folder_name)
+            version_file.set_version_name(name)
+            has_versions = version_file.has_versions()
+            if not has_versions:
+                continue
+            versions = version_file.get_versions()
+            if not versions:
+                continue
+            version_list = list()
+            for version_number, version_file_name in versions.items():
+                comment, user = version_file.get_version_data(version_number)
+                version_list.append({
+                    'uuid': version_folder_name, 'version_number': version_number,
+                    'name': version_file_name, 'comment': comment, 'user': user})
+            if not version_list:
+                continue
+            all_versions.setdefault(identifier, version_list)
+
+        if not all_versions:
+            return
+
+        for identifier, versions in all_versions.items():
+            for version_data in versions:
+                self.add_version(**version_data)
+
+    def get_versions_path(self):
+        """
+        Returns path where versions are stored
+        :return: str
+        """
+
+        versions_path = self.settings().get('versions_path')
+        if not versions_path:
+            versions_path = path_utils.join_path(self.get_directory(), '.versions')
+            self.update_settings({'versions_path': versions_path})
+        if not os.path.isdir(versions_path):
+            os.makedirs(versions_path)
+
+        return versions_path
+
+    def get_version_path(self, identifier):
+        """
+        Returns version path for the given identifier
+        :param identifier: str
+        :return: str
+        """
+
+        identifier = self.get_identifier(identifier)
+
+        item_id = self.find_uuid(identifier)
+        if not item_id:
+            return None
+
+        return path_utils.join_path(self.get_versions_path(), item_id)
+
+    def add_version(self, uuid, version_number, name, comment, user):
+        """
+        Assigns given tags to the data with the given identifier
+        :param uuid: str, data identifier
+        """
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+                self._execute(connection, 'version_add', replacements={
+                    '$(UUID)': uuid, '$(VERSION)': str(version_number),
+                    '$(NAME)': str(name), '$(COMMENT)': str(comment), '$(USER)': str(user)})
+
+    def rename_version(self, uuid, new_uuid):
+
+        versions_path = self.get_versions_path()
+        if not versions_path or not os.path.isdir(versions_path):
+            return
+
+        version_folders = folder_utils.get_folders(versions_path)
+        for version_folder in version_folders:
+            if version_folder == uuid:
+                folder_utils.rename_folder(path_utils.join_path(versions_path, version_folder), new_uuid)
+                break
+
+    def clean_versions(self):
+        versions_path = self.get_versions_path()
+        if not versions_path or not os.path.isdir(versions_path):
+            return
+
+        all_uuids = self.get_all_uuids()
+        version_folders = folder_utils.get_folders(versions_path)
+        for version_folder in version_folders:
+            if version_folder not in all_uuids:
+                folder_utils.delete_folder(path_utils.join_path(versions_path, version_folder))
+
+    # ============================================================================================================
+    # THUMBS
+    # ============================================================================================================
+
+    def sync_thumbs(self, identifiers):
+
+        all_thumbs = list()
+
+        identifiers = python.force_list(identifiers)
+
+        thumbs_path = self.get_thumbs_path()
+        if not thumbs_path or not os.path.isdir(thumbs_path):
+            LOGGER.warning(
+                'Impossible to sync thumbs because thumbs directory was not found: "{}"'.format(thumbs_path))
+            return
+
+        for identifier in identifiers:
+            identifier = self.get_identifier(identifier)
+            uuid = self.get_uuid(identifier)
+            files = fileio.get_files(thumbs_path, uuid)
+            if not files:
+                continue
+            for thumb_file in files:
+                thumb_file_path = path_utils.join_path(thumbs_path, thumb_file)
+                if not thumb_file_path or not os.path.isfile(thumb_file_path):
+                    continue
+                all_thumbs.append({'identifier': identifier, 'thumb_name': thumb_file})
+
+        if not all_thumbs:
+            return
+
+        for thumb in all_thumbs:
+            self.set_thumb(**thumb)
+
+    def get_thumbs_path(self):
+        """
+        Returns path where thumbnails are stored
+        :return: str
+        """
+
+        thumbs_path = self.settings().get('thumbs_path')
+        if not thumbs_path:
+            thumbs_path = path_utils.join_path(self.get_directory(), '.thumbs')
+            self.update_settings({'thumbs_path': thumbs_path})
+        if not os.path.isdir(thumbs_path):
+            os.makedirs(thumbs_path)
+
+        return thumbs_path
+
+    def get_thumb(self, identifier):
+
+        identifier = self.get_identifier(identifier)
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'thumb_get', replacements={'$(IDENTIFIER)': identifier})
+
+        results = connection.results
+        if not results:
+            return None
+
+        return results[0][0]
+
+    def set_thumb(self, identifier, thumb_name):
+
+        identifier = self.get_identifier(identifier)
+
+        uuid = self.find_uuid(identifier)
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            self._execute(connection, 'thumb_set', replacements={'$(UUID)': uuid, '$(THUMB)': thumb_name})
+
+    def rename_thumb(self, uuid, new_uuid):
+        thumbs_path = self.get_thumbs_path()
+        if not thumbs_path or not os.path.isdir(thumbs_path):
+            return
+
+        thumb_files = fileio.get_files(thumbs_path)
+        for thumb_file in thumb_files:
+            thumb_name = os.path.splitext(thumb_file)[0]
+            if thumb_name == uuid:
+                thumb_extension = os.path.splitext(thumb_file)[-1]
+                new_thumb_name = '{}{}'.format(new_uuid, thumb_extension)
+                fileio.rename_file(thumb_file, thumbs_path, new_thumb_name)
+                with sqlite.ConnectionContext(self._id, commit=True) as connection:
+                    self._execute(connection, 'thumb_set', replacements={'$(UUID)': new_uuid, '$(THUMB)': new_thumb_name})
+                break
+
+    def clean_thumbnails(self):
+        thumbs_path = self.get_thumbs_path()
+        if not thumbs_path or not os.path.isdir(thumbs_path):
+            return
+
+        all_uuids = self.get_all_uuids()
+        thumb_files = fileio.get_files(thumbs_path)
+        for thumb_file in thumb_files:
+            thumb_name = os.path.splitext(thumb_file)[0]
+            if thumb_name not in all_uuids:
+                fileio.delete_file(path_utils.join_path(thumbs_path, thumb_file))
+
+    # ============================================================================================================
+    # METADATA
+    # ============================================================================================================
+
+    def sync_metadata(self, identifiers):
+
+        all_metadata = list()
+
+        identifiers = python.force_list(identifiers)
+
+        metadata_path = self.get_metadata_path()
+        if not metadata_path or not os.path.isdir(metadata_path):
+            LOGGER.warning(
+                'Impossible to sync metadata because metadata directory was not found: "{}"'.format(metadata_path))
+            return
+
+        for identifier in identifiers:
+            identifier = self.get_identifier(identifier)
+            uuid = self.get_uuid(identifier)
+            files = fileio.get_files(metadata_path, uuid)
+            if not files:
+                continue
+            for metadata_file in files:
+                metadata_file_path = path_utils.join_path(metadata_path, metadata_file)
+                if not metadata_file_path or not os.path.isfile(metadata_file_path):
+                    continue
+                split_file = metadata_file.split('.')
+                version = split_file[-2]
+                metadata = dict()
+                try:
+                    metadata = jsonio.read_file(metadata_file_path)
+                except Exception:
+                    pass
+
+                all_metadata.append({'identifier': identifier, 'version': version, 'metadata_dict': metadata})
+
+        if not all_metadata:
+            return
+
+        for metadata in all_metadata:
+            self.set_metadata(**metadata)
+
+    def get_metadata_path(self):
+        """
+        Returns path were metadata are stored
+        :return: str
+        """
+
+        metadata_path = self.settings().get('metadata_path')
+        if not metadata_path:
+            metadata_path = path_utils.join_path(self.get_directory(), '.meta')
+            self.update_settings({'metadata_path': metadata_path})
+        if not os.path.isdir(metadata_path):
+            os.makedirs(metadata_path)
+
+        return metadata_path
+
+    def set_metadata(self, identifier, version, metadata_dict):
+        """
+        Sets item metadata
+        :param identifier: str
+        :param metadata_dict: dict
+        """
+
+        identifier = self.get_identifier(identifier)
+
+        uuid = self.find_uuid(identifier)
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            self._execute(
+                connection, 'metadata_set',
+                replacements={'$(UUID)': uuid, '$(VERSION)': version, '$(METADATA)': metadata_dict})
+
+    def rename_metadata(self, uuid, new_uuid):
+
+        metadata_path = self.get_metadata_path()
+        if not metadata_path or not os.path.isdir(metadata_path):
+            return
+
+        meta_files = fileio.get_files(metadata_path)
+        for meta_file in meta_files:
+            meta_name = os.path.splitext(meta_file)[0].split('.')[0]
+            if meta_name == uuid:
+                meta_extension = os.path.splitext(meta_file)[-1]
+                new_meta_name = '{}{}'.format(new_uuid, meta_extension)
+                fileio.rename_file(meta_file, metadata_path, new_meta_name)
+                break
+
+    def clean_metadata(self):
+        metadata_path = self.get_metadata_path()
+        if not metadata_path or not os.path.isdir(metadata_path):
+            return
+
+        all_uuids = self.get_all_uuids()
+        meta_files = fileio.get_files(metadata_path)
+        for meta_file in meta_files:
+            meta_name = os.path.splitext(meta_file)[0].split('.')[0]
+            if meta_name not in all_uuids:
+                fileio.delete_file(path_utils.join_path(metadata_path, meta_file))
 
     # ============================================================================================================
     # SEARCH
@@ -1029,6 +1420,42 @@ class DataLibrary(object):
 
         return results
 
+    def find_id(self, identifier):
+        """
+        Returns unique id of the given identifier
+        :param identifier: str
+        :return: str
+        """
+
+        identifier = self.get_identifier(identifier)
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'find_id', replacements={'$(IDENTIFIER)': identifier})
+
+        results = connection.results
+        if not results:
+            return None
+
+        return results[0][0]
+
+    def find_uuid(self, identifier):
+        """
+        Returns UUID of the given identifier
+        :param identifier: str
+        :return: str
+        """
+
+        identifier = self.get_identifier(identifier)
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'find_uuid', replacements={'$(IDENTIFIER)': identifier})
+
+        results = connection.results
+        if not results:
+            return None
+
+        return results[0][0]
+
     def results(self):
         """
         Return the items found after a search is executed
@@ -1106,13 +1533,13 @@ class DataLibrary(object):
 
     def _get_relative_identifier(self, identifier):
         """
-        Internal funtion that returns a relative identifier from the given one
+        Internal function that returns a relative identifier from the given one
         :param identifier: str
         :return: str
         """
 
         if os.path.isabs(identifier):
-            identifier = os.path.relpath(identifier, self.get_directory())
+            identifier = path_utils.clean_path(os.path.relpath(identifier, self.get_directory()))
 
         if identifier.startswith('.'):
             return identifier
@@ -1202,6 +1629,8 @@ class DataLibrary(object):
         :param scanned_fields: dict
         """
 
+        scanned_fields['uuid'] = self.get_uuid(identifier)
+
         if self._relative_paths:
             # We update the scanned directory to make sure its stored relative to current project path
             scanned_fields['directory'] = self._get_relative_identifier(scanned_fields['directory'])
@@ -1209,8 +1638,3 @@ class DataLibrary(object):
         item = self.get(identifier)
         if item:
             scanned_fields['type'] = item.type()
-
-    def _get_metadata_dict(self, identifier):
-        item = self.get(identifier)
-        if item:
-            return item.metadata_dict() or dict()

@@ -8,21 +8,21 @@ CREATE TABLE fields
 CREATE UNIQUE INDEX fields_id_uindex ON fields(id);
 
 INSERT into fields (name, sortable, groupable)
-VALUES ('name', TRUE, FALSE),
+VALUES ('uuid', FALSE, FALSE),
+       ('name', TRUE, FALSE),
        ('directory', TRUE, FALSE),
        ('type', TRUE, TRUE),
        ('extension', TRUE, TRUE),
        ('folder', TRUE, FALSE),
        ('modified', TRUE, FALSE),
        ('user', TRUE, TRUE),
-       ('ctime', TRUE, FALSE),
-       ('metadata', FALSE, FALSE);
-
+       ('ctime', TRUE, FALSE);
 
 CREATE TABLE elements
 (
     id INTEGER PRIMARY KEY,
     identifier TEXT NOT NULL,
+    uuid TEXT NOT NULL,
     name TEXT,
     directory TEXT,
     type TEXT,
@@ -30,11 +30,20 @@ CREATE TABLE elements
     folder BOOLEAN,
     user TEXT,
     modified TIME,
-    ctime INTEGER,
-    metadata TEXT
+    ctime INTEGER
 );
 CREATE UNIQUE INDEX elements_id_uindex ON elements(id);
 CREATE UNIQUE INDEX elements_identifier_uindex ON elements(identifier);
+CREATE UNIQUE INDEX elements_uuid_uindex ON elements(uuid);
+
+-- CREATE TABLE map_dependencies
+-- (
+--   element_id INT NOT NULL,
+--   requirement_id INT NOT NULL,
+--   PRIMARY KEY(element_id, requirement_id),
+--   CONSTRAINT map_dependencies_element_id_fk FOREIGN KEY (element_id) REFERENCES elements (id),
+--   CONSTRAINT map_dependencies_requirement_id_fk FOREIGN KEY (requirement_id) REFERENCES elements (id)
+-- );
 
 CREATE TABLE tags
 (
@@ -51,6 +60,34 @@ CREATE TABLE map_tags
     PRIMARY KEY(element_id, tag_id),
     CONSTRAINT map_tags_element_id_fk FOREIGN KEY (element_id) REFERENCES elements (id),
     CONSTRAINT map_tags_tags_id_fk FOREIGN KEY (tag_id) REFERENCES tags (id)
+);
+
+CREATE TABLE versions
+(
+    uuid TEXT NOT NULL,
+    version TEXT NOT NULL,
+    name TEXT NOT NULL,
+    comment TEXT,
+    user TEXT,
+    PRIMARY KEY(uuid),
+    CONSTRAINT map_versions_uuid_fk FOREIGN KEY (uuid) REFERENCES elements (uuid) ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE thumbnails
+(
+    uuid TEXT NOT NULL,
+    thumbnail TEXT,
+    PRIMARY KEY(uuid),
+    CONSTRAINT map_versions_uuid_fk FOREIGN KEY (uuid) REFERENCES elements (uuid) ON UPDATE CASCADE ON DELETE CASCADE
+);
+
+CREATE TABLE metadata
+(
+    uuid TEXT NOT NULL,
+    version TEXT NOT NULL,
+    metadata TEXT,
+    PRIMARY KEY(uuid),
+    CONSTRAINT map_metadata_uuid_fk FOREIGN KEY (uuid) REFERENCES elements (uuid) ON UPDATE CASCADE ON DELETE CASCADE
 );
 
 CREATE TABLE settings

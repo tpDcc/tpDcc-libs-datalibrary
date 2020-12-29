@@ -1,4 +1,2 @@
-UPDATE elements
-SET metadata="$(METADATA)"
-WHERE identifier='$(IDENTIFIER)';
-
+REPLACE INTO metadata (uuid, version, metadata)
+VALUES ('$(UUID)','$(VERSION)',"$(METADATA)")

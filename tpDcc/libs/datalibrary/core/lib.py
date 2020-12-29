@@ -21,8 +21,8 @@ class DataLibraryLib(library.DccLibrary, object):
         super(DataLibraryLib, self).__init__(*args, **kwargs)
 
     @classmethod
-    def config_dict(cls, file_name=None):
-        base_tool_config = library.DccLibrary.config_dict(file_name=file_name)
+    def config_dict(cls):
+        base_tool_config = library.DccLibrary.config_dict()
         tool_config = {
             'name': 'Data Library',
             'id': cls.ID,

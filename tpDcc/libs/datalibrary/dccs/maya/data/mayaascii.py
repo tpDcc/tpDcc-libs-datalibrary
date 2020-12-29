@@ -47,16 +47,8 @@ class MayaAsciiData(datapart.DataPart):
     def menu_name(cls):
         return 'Maya ASCII'
 
-    def label(self):
-        return os.path.basename(self.identifier())
-
-    def icon(self):
-        return 'maya'
-
-    def type(self):
-        return 'Maya ASCII'
-
-    def save_schema(self):
+    @classmethod
+    def save_schema(cls):
         """
         Returns the schema used for saving the item
         :return: dict
@@ -80,6 +72,26 @@ class MayaAsciiData(datapart.DataPart):
                 "layout": "vertical"
             }
         ]
+
+    @classmethod
+    def metadata_dict(cls):
+
+        # references = utils.get_reference_data(self.metadata().get('objects', list()))
+
+        return {
+            # 'references': references,
+            'references': list(),
+            'mayaVersion': str(dcc.client().get_version())
+        }
+
+    def label(self):
+        return os.path.basename(self.identifier())
+
+    def icon(self):
+        return 'maya'
+
+    def type(self):
+        return 'Maya ASCII'
 
     def load_schema(self):
 
@@ -116,7 +128,8 @@ class MayaAsciiData(datapart.DataPart):
         namespace_option = options.get('namespaceOption')
 
         if namespace_option == 'From file':
-            namespaces = self.metadata().get('namespaces', list())
+            namespaces = list()
+            # namespaces = self.metadata().get('namespaces', list())
         elif namespace_option == 'From selection':
             namespaces = dcc.client().list_namespaces_from_selection() or ['']
 
@@ -139,18 +152,10 @@ class MayaAsciiData(datapart.DataPart):
             }
         ]
 
-    def metadata_dict(self):
-
-        references = utils.get_reference_data(self.metadata().get('objects', list()))
-
-        return {
-            'references': references,
-            'mayaVersion': str(dcc.client().get_version())
-        }
-
     def functionality(self):
         return dict(
             load=self.load,
+            import_data=self.import_data,
             save=self.save,
             clean_student_license=self.clean_student_license
         )
@@ -167,7 +172,21 @@ class MayaAsciiData(datapart.DataPart):
         if not filepath or not os.path.isfile(filepath):
             return
 
-        dcc.client().open_file(filepath)
+        return dcc.client().open_file(filepath)
+
+    def import_data(self):
+        """
+        Imports Maya file into current Maya scene
+        """
+
+        filepath = self.format_identifier()
+        if not filepath.endswith(MayaAsciiData.EXTENSION):
+            filepath = '{}{}'.format(filepath, MayaAsciiData.EXTENSION)
+
+        if not filepath or not os.path.isfile(filepath):
+            return
+
+        return dcc.client().import_file(filepath)
 
     def save(self):
         """

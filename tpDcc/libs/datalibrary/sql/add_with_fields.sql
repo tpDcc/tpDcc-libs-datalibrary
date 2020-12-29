@@ -1,2 +1,2 @@
-INSERT OR IGNORE INTO elements (identifier,metadata,$(FIELDS))
-VALUES ('$(IDENTIFIER)', "$(METADATA)", $(FIELDS_VALUES));
+INSERT OR IGNORE INTO elements (identifier,$(FIELDS))
+VALUES ('$(IDENTIFIER)', $(FIELDS_VALUES));

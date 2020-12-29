@@ -9,12 +9,9 @@ and their compositions are used to represent data
 from __future__ import print_function, division, absolute_import
 
 import os
-import json
 import logging
 
-import shortuuid
-
-from tpDcc.libs.python import fileio, composite, path as path_utils
+from tpDcc.libs.python import fileio, jsonio, version, folder, composite, path as path_utils
 
 LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
 
@@ -184,17 +181,6 @@ class DataPart(composite.Composition):
 
         return composite.Ignore
 
-    @composite.update_dictionary
-    def metadata_dict(self):
-        """
-        Exposes per-metadata functionality in the form of a dictionary where the key is the string accessor, and the value
-        is a callable. In a situation where multiple DataParts are bound then a single dictionary with all the entries
-        combined is returned.
-        :return: dict
-        """
-
-        return composite.Ignore
-
     @composite.extend_results
     def load_schema(self):
         """
@@ -203,6 +189,15 @@ class DataPart(composite.Composition):
         """
 
         return list()
+
+    @composite.update_dictionary
+    def metadata_dict(self):
+        """
+        Exposes per-metadata functionality in the form of a dictionary
+        :return: dict
+        """
+
+        return composite.Ignore
 
     @composite.extend_results
     def save_validator(self, **fields):
@@ -279,43 +274,9 @@ class DataPart(composite.Composition):
 
         return list(data.values())[0]
 
-    def metadata(self):
-        """
-        Returns metadata data dictionary.
-        :return: dict
-        """
-
-        metadata_str = self.data().get('metadata', '')
-        if not metadata_str:
-            return dict()
-
-        metadata_str = metadata_str.replace("\'", "\"")
-
-        try:
-            return json.loads(metadata_str)
-        except Exception as exc:
-            LOGGER.warning('Was not possible to read item "{}" metadata: {} | {}'.format(self, metadata_str, exc))
-
-        return dict()
-
-    def set_metadata(self, metadata_dict):
-        """
-        Sets metadata data dictionary of this item
-        :param metadata_dict:
-        :return:
-        """
-        return self._db.set_metadata(self._id, metadata_dict)
-
-    def store_thumbnail(self, thumbnail_path):
-        if not os.path.isfile(thumbnail_path):
-            return None
-        _, thumb_extension = os.path.splitext(os.path.basename(thumbnail_path))
-        thumbs_path = self._db.get_thumbs_path()
-        thumb_name = '{}{}'.format(shortuuid.uuid(), thumb_extension)
-        thumb_path = path_utils.join_path(thumbs_path, thumb_name)
-        fileio.move_file(thumbnail_path, thumb_path)
-
-        return thumb_name
+    # ============================================================================================================
+    # TAGS
+    # ============================================================================================================
 
     def tags(self):
         """
@@ -336,8 +297,128 @@ class DataPart(composite.Composition):
     def untag(self, tags):
         """
         Untags the given tags from this DataPart
-        :param tag: list(str) or str, tag or list of tags we want to remove from this DataPart
+        :param tags: list(str) or str, tag or list of tags we want to remove from this DataPart
         :return:
         """
 
         return self._db.untag(self._id, tags)
+
+    # ============================================================================================================
+    # VERSION
+    # ============================================================================================================
+
+    def version_path(self):
+        """
+        Returns the path where data versions are located
+        :return: str
+        """
+
+        return path_utils.clean_path(self._db.get_version_path(self.format_identifier()))
+
+    def create_version(self, name, comment):
+
+        version_path = self.version_path()
+        if version_path and not os.path.isdir(version_path):
+            folder.create_folder(version_path)
+        if version_path and os.path.isdir(version_path):
+            versions_path = os.path.dirname(version_path)
+            version_folder_name = os.path.basename(version_path)
+            version_file = version.VersionFile(self.format_identifier())
+            version_file.set_version_folder(versions_path)
+            version_file.set_version_folder_name(version_folder_name)
+            version_file.set_version_name(name)
+            version_file.save(comment or '')
+            last_version = version_file.get_latest_version()
+        else:
+            return False
+
+        if last_version:
+            self.create_metadata(os.path.basename(last_version).split('.')[-1])
+
+        return True
+
+    # ============================================================================================================
+    # THUMBNAIL
+    # ============================================================================================================
+
+    def get_thumb_name(self):
+
+        return self._db.get_thumb(self._id)
+
+    def get_thumb_path(self, thumb_name=None):
+
+        thumb_name = thumb_name or self.get_thumb_name()
+        if not thumb_name:
+            return
+
+        thumb_path = path_utils.join_path(self._db.get_thumbs_path(), thumb_name)
+
+        return thumb_path
+
+    def store_thumbnail(self, thumbnail_path):
+        if not os.path.isfile(thumbnail_path):
+            return None
+        extension = os.path.splitext(os.path.basename(thumbnail_path))[-1]
+        thumb_name = self._db.get_uuid(self._id)
+        if not thumb_name.endswith(extension):
+            thumb_name = '{}{}'.format(thumb_name, extension)
+        thumb_path = self.get_thumb_path(thumb_name)
+        fileio.move_file(thumbnail_path, thumb_path)
+
+        self._db.set_thumb(self._id, thumb_name)
+
+        return True
+
+    # ============================================================================================================
+    # METADATA
+    # ============================================================================================================
+
+    def get_metadata_path(self, version):
+        metadata_name = '{}.{}.json'.format(self._db.get_uuid(self._id), version)
+        meta_path = path_utils.join_path(self._db.get_metadata_path(), metadata_name)
+
+        return meta_path
+
+    def create_metadata(self, version):
+
+        # We make sure the current item exists and also, we make sure the item has all composition metadata
+        item = self._db.get(self._id)
+        if not item:
+            return
+
+        metadata = item.metadata_dict() or dict()
+        metadata_path = self.get_metadata_path(version)
+        metadata_dir = os.path.dirname(metadata_path)
+        if not os.path.isdir(metadata_dir):
+            folder.create_folder(metadata_dir)
+        jsonio.write_to_file(metadata, metadata_path)
+
+        self.set_metadata(version, metadata)
+
+    # def metadata(self):
+    #     """
+    #     Returns metadata data dictionary.
+    #     :return: dict
+    #     """
+    #
+    #     metadata_str = self.data().get('metadata', '')
+    #     if not metadata_str:
+    #         return dict()
+    #
+    #     metadata_str = metadata_str.replace("\'", "\"")
+    #
+    #     try:
+    #         return json.loads(metadata_str)
+    #     except Exception as exc:
+    #         LOGGER.warning('Was not possible to read item "{}" metadata: {} | {}'.format(self, metadata_str, exc))
+    #
+    #     return dict()
+
+    def set_metadata(self, version, metadata_dict):
+        """
+        Sets metadata data dictionary of this item
+        :param metadata_dict:
+        :return:
+        """
+        return self._db.set_metadata(self._id, version, metadata_dict)
+
