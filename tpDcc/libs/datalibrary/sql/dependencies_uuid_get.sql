@@ -3,5 +3,5 @@ FROM map_dependencies
 WHERE element_uuid IN (
     SELECT uuid
     FROM elements
-    WHERE identifier = './skin.skin'
+    WHERE identifier = '$(IDENTIFIER)'
 )
