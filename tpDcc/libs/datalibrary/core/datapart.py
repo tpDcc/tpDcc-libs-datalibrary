@@ -48,6 +48,7 @@ class DataPart(composite.Composition):
 
         self._id = identifier
         self._db = db
+        self._dependencies = dict()
 
         if self.EXTENSION and not self._id.endswith(self.EXTENSION):
             self._id = '{}{}'.format(self._id, self.EXTENSION)
@@ -315,7 +316,7 @@ class DataPart(composite.Composition):
 
         return path_utils.clean_path(self._db.get_version_path(self.format_identifier()))
 
-    def create_version(self, name, comment):
+    def create_version(self, comment):
 
         version_path = self.version_path()
         if version_path and not os.path.isdir(version_path):
@@ -326,7 +327,6 @@ class DataPart(composite.Composition):
             version_file = version.VersionFile(self.format_identifier())
             version_file.set_version_folder(versions_path)
             version_file.set_version_folder_name(version_folder_name)
-            version_file.set_version_name(name)
             version_file.save(comment or '')
             last_version = version_file.get_latest_version()
         else:
@@ -395,24 +395,13 @@ class DataPart(composite.Composition):
 
         self.set_metadata(version, metadata)
 
-    # def metadata(self):
-    #     """
-    #     Returns metadata data dictionary.
-    #     :return: dict
-    #     """
-    #
-    #     metadata_str = self.data().get('metadata', '')
-    #     if not metadata_str:
-    #         return dict()
-    #
-    #     metadata_str = metadata_str.replace("\'", "\"")
-    #
-    #     try:
-    #         return json.loads(metadata_str)
-    #     except Exception as exc:
-    #         LOGGER.warning('Was not possible to read item "{}" metadata: {} | {}'.format(self, metadata_str, exc))
-    #
-    #     return dict()
+    def metadata(self):
+        """
+        Returns metadata data dictionary.
+        :return: dict
+        """
+
+        self._db.get_metadata(self.format_identifier())
 
     def set_metadata(self, version, metadata_dict):
         """
@@ -422,3 +411,25 @@ class DataPart(composite.Composition):
         """
         return self._db.set_metadata(self._id, version, metadata_dict)
 
+    # ============================================================================================================
+    # DEPENDENCIES
+    # ============================================================================================================
+
+    def update_dependencies(self):
+        if not self._dependencies:
+            return
+
+        dependency_file_name = '{}.json'.format(self._db.get_uuid(self.format_identifier()))
+        dependency_path = path_utils.join_path(self._db.get_dependencies_path(), dependency_file_name)
+        if not os.path.isfile(dependency_path):
+            fileio.create_file(dependency_path)
+
+        for dependency_name, dependency in self._dependencies.items():
+            self._db.add_dependency(self.format_identifier(), dependency, dependency_name)
+
+        dependencies = self._db.get_dependencies(self.format_identifier(), as_uuid=True)
+        if not dependencies:
+            fileio.delete_file(dependency_path)
+            return
+
+        jsonio.write_to_file(dependencies, dependency_path)

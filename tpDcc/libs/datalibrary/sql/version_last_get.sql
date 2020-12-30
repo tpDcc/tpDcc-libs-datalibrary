@@ -5,3 +5,5 @@ WHERE uuid IN (
     FROM elements
     WHERE identifier='$(IDENTIFIER)'
 )
+ORDER BY version DESC
+LIMIT 1

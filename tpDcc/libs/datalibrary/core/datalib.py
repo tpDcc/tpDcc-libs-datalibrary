@@ -279,6 +279,7 @@ class DataLibrary(object):
         self.get_thumbs_path()
         self.get_versions_path()
         self.get_metadata_path()
+        self.get_dependencies_path()
 
         return True
 
@@ -598,6 +599,7 @@ class DataLibrary(object):
             self.sync_versions(identifiers=scanned_identifiers)
             self.sync_metadata(identifiers=scanned_identifiers)
             self.sync_thumbs(identifiers=scanned_identifiers)
+            self.sync_dependencies(identifiers=scanned_identifiers)
 
             self.clean_invalid_identifiers()
             # self.clean_versions()
@@ -811,7 +813,7 @@ class DataLibrary(object):
         with sqlite.ConnectionContext(self._id, get=True) as connection:
             self._execute(connection, 'tags_get', replacements={'$(IDENTIFIER)': identifier})
 
-        return [str(result[0] for result in connection.results)]
+        return [str(result[0]) for result in connection.results]
 
     # ============================================================================================================
     # VERSIONS
@@ -835,11 +837,11 @@ class DataLibrary(object):
             if not version_path or not os.path.isdir(version_path):
                 continue
 
-            name = self.find_data(identifier).get(identifier, dict()).get('name')
+            # name = self.find_data(identifier).get(identifier, dict()).get('name')
             version_folder_name = os.path.basename(version_path)
             version_file = version.VersionFile(versions_path)
             version_file.set_version_folder_name(version_folder_name)
-            version_file.set_version_name(name)
+            # version_file.set_version_name(name)
             has_versions = version_file.has_versions()
             if not has_versions:
                 continue
@@ -903,6 +905,38 @@ class DataLibrary(object):
                 self._execute(connection, 'version_add', replacements={
                     '$(UUID)': uuid, '$(VERSION)': str(version_number),
                     '$(NAME)': str(name), '$(COMMENT)': str(comment), '$(USER)': str(user)})
+
+    def get_versions(self, identifier):
+        """
+        Returns all versions of the given data
+        :param identifier: str
+        :return: list
+        """
+
+        identifier = self.get_identifier(identifier)
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'versions_get', replacements={'$(IDENTIFIER)': identifier})
+
+        return connection.results
+
+    def get_latest_version(self, identifier):
+        """
+        Returns last version data of the given data
+        :param identifier: str
+        :return:
+        """
+
+        identifier = self.get_identifier(identifier)
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'version_last_get', replacements={'$(IDENTIFIER)': identifier})
+
+        results = connection.results
+        if not results:
+            return None
+
+        return results[0][0]
 
     def rename_version(self, uuid, new_uuid):
 
@@ -1083,6 +1117,39 @@ class DataLibrary(object):
 
         return metadata_path
 
+    def get_metadata(self, identifier, version=None):
+        """
+        Returns item metadata
+        :param identifier: str
+        :param version: int
+        :return:
+        """
+
+        identifier = self.get_identifier(identifier)
+
+        metadata_version = version if version is not None else self.get_latest_version(identifier)
+        if metadata_version is None:
+            LOGGER.warning('Impossible to retrieve metadata because no version found for "{}"'.format(identifier))
+            return dict()
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(
+                connection, 'metadata_get',
+                replacements={'$(IDENTIFIER)': identifier, '$(VERSION)': metadata_version})
+
+        result = connection.results
+        if not result:
+            return dict()
+
+        result_dict = dict()
+        result_str = result[0][0]
+        try:
+            result_dict = json.loads(str(result_str).replace("\'", "\""))
+        except Exception as exc:
+            LOGGER.warning('Error while parsing file "{}" metadata: "{}"'.format(identifier, exc))
+
+        return result_dict
+
     def set_metadata(self, identifier, version, metadata_dict):
         """
         Sets item metadata
@@ -1125,6 +1192,107 @@ class DataLibrary(object):
             meta_name = os.path.splitext(meta_file)[0].split('.')[0]
             if meta_name not in all_uuids:
                 fileio.delete_file(path_utils.join_path(metadata_path, meta_file))
+
+    # ============================================================================================================
+    # DEPENDENCIES
+    # ============================================================================================================
+
+    def sync_dependencies(self, identifiers):
+
+        all_dependencies = list()
+
+        identifiers = python.force_list(identifiers)
+
+        dependencies_path = self.get_dependencies_path()
+        if not dependencies_path or not os.path.isdir(dependencies_path):
+            LOGGER.warning(
+                'Impossible to sync dependencies because dependencies directory was not found: "{}"'.format(
+                    dependencies_path))
+            return
+
+        for identifier in identifiers:
+            identifier = self.get_identifier(identifier)
+            uuid = self.get_uuid(identifier)
+            files = fileio.get_files(dependencies_path, uuid)
+            if not files:
+                continue
+            for dependency_file in files:
+                dependency_file_path = path_utils.join_path(dependencies_path, dependency_file)
+                if not dependency_file_path or not os.path.isfile(dependency_file_path):
+                    continue
+                dependency_data = dict()
+                try:
+                    dependency_data = jsonio.read_file(dependency_file_path)
+                except Exception:
+                    pass
+                if not dependency_data:
+                    continue
+
+                for dependency_name, dependency_uuid in dependency_data.items():
+                    dependency_identifier = self.find_identifier_from_uuid(dependency_uuid)
+                    if not dependency_identifier:
+                        continue
+                    all_dependencies.append(
+                        {'root_identifier': identifier, 'dependency_identifier': dependency_identifier,
+                         'name': dependency_name})
+
+        if not all_dependencies:
+            return
+
+        for dependency in all_dependencies:
+            self.add_dependency(**dependency)
+
+    def get_dependencies_path(self):
+        """
+        Returns path were dependencies links are stored
+        :return: str
+        """
+
+        dependencies_path = self.settings().get('dependencies_path')
+        if not dependencies_path:
+            dependencies_path = path_utils.join_path(self.get_directory(), '.dependencies')
+            self.update_settings({'dependencies_path': dependencies_path})
+        if not os.path.isdir(dependencies_path):
+            os.makedirs(dependencies_path)
+
+        return dependencies_path
+
+    def add_dependency(self, root_identifier, dependency_identifier, name):
+        """
+        Assigns given tags to the data with the given identifier
+        :param root_identifier: str, data identifier
+        :param dependency_identifier: str, data identifier
+        :param name: str, data identifier
+        """
+
+        root_identifier = self.get_identifier(root_identifier)
+        dependency_identifier = self.get_identifier(dependency_identifier)
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+                self._execute(connection, 'dependency_add', replacements={
+                    '$(ROOT_IDENTIFIER)': root_identifier, '$(DEPENDENCY_IDENTIFIER)': dependency_identifier,
+                    '$(NAME)': name})
+
+    def get_dependencies(self, identifier, as_uuid=False):
+
+        identifier = self.get_identifier(identifier)
+
+        if as_uuid:
+            with sqlite.ConnectionContext(self._id, get=True) as connection:
+                self._execute(connection, 'dependencies_uuid_get', replacements={'$(IDENTIFIER)': identifier})
+        else:
+            with sqlite.ConnectionContext(self._id, get=True) as connection:
+                self._execute(connection, 'dependencies_get', replacements={'$(IDENTIFIER)': identifier})
+
+        result_dict = dict()
+        result = connection.results
+        if not result:
+            return result_dict
+
+        for result in connection.results:
+            result_dict[result[1]] = result[0]
+
+        return result_dict
 
     # ============================================================================================================
     # SEARCH
@@ -1438,6 +1606,22 @@ class DataLibrary(object):
 
         return results[0][0]
 
+    def find_identifier_from_uuid(self, uuid):
+        """
+        Returns identifier from tis UUID
+        :param uuid: str
+        :return: str
+        """
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'find_from_uuid', replacements={'$(UUID)': uuid})
+
+        results = connection.results
+        if not results:
+            return None
+
+        return results[0][0]
+
     def find_uuid(self, identifier):
         """
         Returns UUID of the given identifier
@@ -1541,7 +1725,7 @@ class DataLibrary(object):
         if os.path.isabs(identifier):
             identifier = path_utils.clean_path(os.path.relpath(identifier, self.get_directory()))
 
-        if identifier.startswith('.'):
+        if identifier == '.' or identifier.startswith('./'):
             return identifier
 
         return path_utils.clean_path('./{}'.format(identifier))

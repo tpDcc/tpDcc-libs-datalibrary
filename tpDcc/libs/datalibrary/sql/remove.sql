@@ -4,17 +4,18 @@ WHERE element_id = (
     FROM elements
     WHERE identifier='$(IDENTIFIER)'
 );
--- DELETE FROM map_dependencies
--- WHERE element_id = (N
---     SELECT id
---     FROM elements
---     WHERE identifier='$(IDENTIFIER)'
--- )
--- OR requirement_id = (
---     SELECT id
---     FROM elements
---     WHERE identifier='$(IDENTIFIER)'
--- );
+
+DELETE FROM map_dependencies
+WHERE element_uuid = (
+    SELECT uuid
+    FROM elements
+    WHERE identifier='$(IDENTIFIER)'
+)
+OR requirement_uuid = (
+    SELECT uuid
+    FROM elements
+    WHERE identifier='$(IDENTIFIER)'
+);
 
 DELETE FROM thumbnails
 WHERE uuid = (

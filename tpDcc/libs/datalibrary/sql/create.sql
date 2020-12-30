@@ -36,14 +36,15 @@ CREATE UNIQUE INDEX elements_id_uindex ON elements(id);
 CREATE UNIQUE INDEX elements_identifier_uindex ON elements(identifier);
 CREATE UNIQUE INDEX elements_uuid_uindex ON elements(uuid);
 
--- CREATE TABLE map_dependencies
--- (
---   element_id INT NOT NULL,
---   requirement_id INT NOT NULL,
---   PRIMARY KEY(element_id, requirement_id),
---   CONSTRAINT map_dependencies_element_id_fk FOREIGN KEY (element_id) REFERENCES elements (id),
---   CONSTRAINT map_dependencies_requirement_id_fk FOREIGN KEY (requirement_id) REFERENCES elements (id)
--- );
+CREATE TABLE map_dependencies
+(
+  element_uuid TEXT NOT NULL,
+  requirement_uuid TEXT NOT NULL,
+  name TEXT,
+  PRIMARY KEY(element_uuid, requirement_uuid),
+  CONSTRAINT map_dependencies_element_id_fk FOREIGN KEY (element_uuid) REFERENCES elements (uuid) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT map_dependencies_requirement_id_fk FOREIGN KEY (requirement_uuid) REFERENCES elements (uuid) ON UPDATE CASCADE ON DELETE CASCADE
+);
 
 CREATE TABLE tags
 (
