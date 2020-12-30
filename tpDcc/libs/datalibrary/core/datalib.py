@@ -378,6 +378,8 @@ class DataLibrary(object):
             user.decode(locale.getpreferredencoding())
         modified = timedate.get_date_and_time()
 
+        current_dependencies = self.get_dependencies(identifier, as_uuid=True)
+
         with sqlite.ConnectionContext(self._id, commit=True) as connection:
             self._execute(connection, 'rename', replacements={
                 '$(IDENTIFIER)': identifier, '$(NEW_IDENTIFIER)': new_identifier, '$(NEW_UUID)': new_uuid,
@@ -386,6 +388,7 @@ class DataLibrary(object):
         self.rename_metadata(current_uuid, new_uuid)
         self.rename_thumb(current_uuid, new_uuid)
         self.rename_version(current_uuid, new_uuid)
+        self.rename_dependency(current_uuid, new_uuid, current_dependencies)
 
         self.dataChanged.emit()
 
@@ -421,18 +424,26 @@ class DataLibrary(object):
         self.rename_metadata(current_uuid, new_uuid)
         self.rename_thumb(current_uuid, new_uuid)
         self.rename_version(current_uuid, new_uuid)
+        self.rename_dependency(current_uuid, new_uuid)
 
-    def remove(self, identifier):
+    def remove(self, identifier, recursive=True):
         """
         Removes data from data base
         :param identifier: str, dta identifier
         """
 
         identifier = self.get_identifier(identifier)
+        uuid = self.find_uuid(identifier)
 
         with sqlite.ConnectionContext(self._id, commit=True) as connection:
             self._execute(connection, 'remove', replacements={'$(IDENTIFIER)': identifier})
         self.dataChanged.emit()
+
+        if uuid:
+            self.delete_metadata(uuid)
+            self.delete_thumb(uuid)
+            self.delete_version(uuid)
+            self.delete_dependencies(uuid, recursive=recursive)
 
     def skip_regexes(self):
         """
@@ -602,9 +613,7 @@ class DataLibrary(object):
             self.sync_dependencies(identifiers=scanned_identifiers)
 
             self.clean_invalid_identifiers()
-            # self.clean_versions()
-            # self.clean_thumbnails()
-            # self.clean_metadata()
+
 
         if progress_callback:
             progress_callback('Post Callbacks', 100)
@@ -636,6 +645,12 @@ class DataLibrary(object):
         self._resulst = list()
         self._grouped_results = list()
         self.dataChanged.emit()
+
+    def cleanup(self):
+        self.clean_versions()
+        self.clean_thumbnails()
+        self.clean_metadata()
+        self.clean_dependencies()
 
     # ============================================================================================================
     # PATHS
@@ -950,6 +965,16 @@ class DataLibrary(object):
                 folder_utils.rename_folder(path_utils.join_path(versions_path, version_folder), new_uuid)
                 break
 
+    def delete_version(self, uuid):
+        versions_path = self.get_versions_path()
+        if not versions_path or not os.path.isdir(versions_path):
+            return
+
+        version_folders = folder_utils.get_folders(versions_path)
+        for version_folder in version_folders:
+            if version_folder == uuid:
+                folder_utils.delete_folder(path_utils.join_path(versions_path, version_folder))
+
     def clean_versions(self):
         versions_path = self.get_versions_path()
         if not versions_path or not os.path.isdir(versions_path):
@@ -1046,6 +1071,18 @@ class DataLibrary(object):
                 fileio.rename_file(thumb_file, thumbs_path, new_thumb_name)
                 with sqlite.ConnectionContext(self._id, commit=True) as connection:
                     self._execute(connection, 'thumb_set', replacements={'$(UUID)': new_uuid, '$(THUMB)': new_thumb_name})
+                break
+
+    def delete_thumb(self, uuid):
+        thumbs_path = self.get_thumbs_path()
+        if not thumbs_path or not os.path.isdir(thumbs_path):
+            return
+
+        thumb_files = fileio.get_files(thumbs_path)
+        for thumb_file in thumb_files:
+            thumb_name = os.path.splitext(thumb_file)[0]
+            if thumb_name == uuid:
+                fileio.delete_file(path_utils.join_path(thumbs_path, thumb_file))
                 break
 
     def clean_thumbnails(self):
@@ -1167,7 +1204,6 @@ class DataLibrary(object):
                 replacements={'$(UUID)': uuid, '$(VERSION)': version, '$(METADATA)': metadata_dict})
 
     def rename_metadata(self, uuid, new_uuid):
-
         metadata_path = self.get_metadata_path()
         if not metadata_path or not os.path.isdir(metadata_path):
             return
@@ -1179,6 +1215,18 @@ class DataLibrary(object):
                 meta_extension = os.path.splitext(meta_file)[-1]
                 new_meta_name = '{}{}'.format(new_uuid, meta_extension)
                 fileio.rename_file(meta_file, metadata_path, new_meta_name)
+                break
+
+    def delete_metadata(self, uuid):
+        metadata_path = self.get_metadata_path()
+        if not metadata_path or not os.path.isdir(metadata_path):
+            return
+
+        meta_files = fileio.get_files(metadata_path)
+        for meta_file in meta_files:
+            meta_name = os.path.splitext(meta_file)[0].split('.')[0]
+            if meta_name == uuid:
+                fileio.delete_file(path_utils.join_path(metadata_path, meta_file))
                 break
 
     def clean_metadata(self):
@@ -1228,7 +1276,7 @@ class DataLibrary(object):
                 if not dependency_data:
                     continue
 
-                for dependency_name, dependency_uuid in dependency_data.items():
+                for dependency_uuid, dependency_name in dependency_data.items():
                     dependency_identifier = self.find_identifier_from_uuid(dependency_uuid)
                     if not dependency_identifier:
                         continue
@@ -1290,9 +1338,100 @@ class DataLibrary(object):
             return result_dict
 
         for result in connection.results:
-            result_dict[result[1]] = result[0]
+            result_dict[result[0]] = result[1]
 
         return result_dict
+
+    def rename_dependency(self, uuid, new_uuid, current_dependencies):
+
+        dependencies_path = self.get_dependencies_path()
+        if not dependencies_path or not os.path.isdir(dependencies_path):
+            return
+
+        dependencies_files = fileio.get_files(dependencies_path)
+        for dependency_file in dependencies_files:
+            dependency_name = os.path.splitext(dependency_file)[0].split('.')[0]
+            if dependency_name == uuid:
+                dependency_extension = os.path.splitext(dependency_file)[-1]
+                new_dependency_name = '{}{}'.format(new_uuid, dependency_extension)
+                fileio.rename_file(dependency_file, dependencies_path, new_dependency_name)
+                break
+
+        for dependency_file in dependencies_files:
+            dependency_name = os.path.splitext(dependency_file)[0].split('.')[0]
+            if dependency_name in current_dependencies:
+                dependency_file_path = path_utils.join_path(dependencies_path, dependency_file)
+                if not os.path.isfile(dependency_file_path):
+                    continue
+                dependency_data = jsonio.read_file(dependency_file_path)
+                if not dependency_data or uuid not in dependency_data:
+                    continue
+                dependency_data[new_uuid] = dependency_data[uuid]
+                dependency_data.pop(uuid)
+                jsonio.write_to_file(dependency_data, dependency_file_path)
+
+    def delete_dependencies(self, uuid, recursive=True):
+        dependencies_path = self.get_dependencies_path()
+        if not dependencies_path or not os.path.isdir(dependencies_path):
+            return
+
+        dependencies_data = None
+        dependencies_files = fileio.get_files(dependencies_path)
+        for dependency_file in dependencies_files:
+            dependency_name = os.path.splitext(dependency_file)[0].split('.')[0]
+            if dependency_name == uuid:
+                dependency_file_path = path_utils.join_path(dependencies_path, dependency_file)
+                dependencies_data = jsonio.read_file(dependency_file_path)
+                fileio.delete_file(dependency_file_path)
+                break
+
+        dependencies_files = fileio.get_files(dependencies_path)
+        for dependency_file in dependencies_files:
+            dependency_file_path = path_utils.join_path(dependencies_path, dependency_file)
+            if not os.path.isfile(dependency_file_path):
+                continue
+            dependency_data = jsonio.read_file(dependency_file_path)
+            if not dependency_data:
+                continue
+            modified = False
+            for dependency_uuid in dependency_data.copy():
+                if dependency_uuid == uuid:
+                    dependency_data.pop(dependency_uuid)
+                    modified = True
+            if modified:
+                jsonio.write_to_file(dependency_data, dependency_file_path)
+
+        if recursive and dependencies_data:
+            for uuid in dependencies_data:
+                self.delete_dependencies(uuid, recursive=True)
+
+    def clean_dependencies(self):
+        dependencies_path = self.get_dependencies_path()
+        if not dependencies_path or not os.path.isdir(dependencies_path):
+            return
+
+        all_uuids = self.get_all_uuids()
+        dependencies_files = fileio.get_files(dependencies_path)
+        for dependency_file in dependencies_files:
+            dependency_name = os.path.splitext(dependency_file)[0].split('.')[0]
+            if dependency_name not in all_uuids:
+                fileio.delete_file(path_utils.join_path(dependencies_path, dependency_file))
+
+        dependencies_files = fileio.get_files(dependencies_path)
+        for dependency_file in dependencies_files:
+            dependency_file_path = path_utils.join_path(dependencies_path, dependency_file)
+            if not os.path.isfile(dependency_file_path):
+                continue
+            dependency_data = jsonio.read_file(dependency_file_path)
+            if not dependency_data:
+                continue
+            modified = False
+            for dependency_uuid in dependency_data:
+                if dependency_uuid not in all_uuids:
+                    dependency_data.pop(dependency_uuid)
+                    modified = True
+            if modified:
+                jsonio.write_to_file(dependency_data, dependency_file_path)
 
     # ============================================================================================================
     # SEARCH

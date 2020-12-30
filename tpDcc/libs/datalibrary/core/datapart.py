@@ -415,21 +415,36 @@ class DataPart(composite.Composition):
     # DEPENDENCIES
     # ============================================================================================================
 
-    def update_dependencies(self):
-        if not self._dependencies:
-            return
+    def update_dependencies(self, recursive=True):
 
         dependency_file_name = '{}.json'.format(self._db.get_uuid(self.format_identifier()))
         dependency_path = path_utils.join_path(self._db.get_dependencies_path(), dependency_file_name)
         if not os.path.isfile(dependency_path):
             fileio.create_file(dependency_path)
 
-        for dependency_name, dependency in self._dependencies.items():
+        all_dependencies = dict()
+        current_dependencies = jsonio.read_file(dependency_path) or dict()
+        for dependency_uuid, dependency_name in current_dependencies.items():
+            dependency = self._db.find_identifier_from_uuid(dependency_uuid)
+            if not dependency:
+                continue
+            all_dependencies.update({dependency: dependency_name})
+        all_dependencies.update(self._dependencies)
+
+        for dependency, dependency_name in all_dependencies.items():
             self._db.add_dependency(self.format_identifier(), dependency, dependency_name)
 
         dependencies = self._db.get_dependencies(self.format_identifier(), as_uuid=True)
         if not dependencies:
             fileio.delete_file(dependency_path)
             return
-
         jsonio.write_to_file(dependencies, dependency_path)
+
+        # We update all related dependencies
+        if recursive:
+            for dependency, dependency_name in all_dependencies.items():
+                dependency_item = self._db.get(dependency)
+                if not dependency_item:
+                    continue
+                dependency_item._dependencies[self.format_identifier()] = self.type()
+                dependency_item.update_dependencies(recursive=False)

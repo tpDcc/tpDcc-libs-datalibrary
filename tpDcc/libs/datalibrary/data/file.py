@@ -54,7 +54,8 @@ class FileData(datapart.DataPart):
             rename=self.rename,
             copy=self.copy,
             move=self.move,
-            delete=self.delete
+            delete=self.delete,
+            delete_with_dependencies=self.delete_with_dependencies
         )
 
     def mandatory_tags(self):
@@ -96,11 +97,35 @@ class FileData(datapart.DataPart):
         fileio.create_file(file_path)
 
     def delete(self):
-
-        # TODO :Take into account dependencies
-
         fileio.delete_file(self.format_identifier())
         self._db.remove(self.identifier())
+
+    def delete_with_dependencies(self, recursive=True):
+        library = self.library
+        if not library:
+            self.delete()
+
+        dependencies = library.get_dependencies(self.format_identifier(), as_uuid=False)
+        for dependency_identifier in dependencies:
+            dependency_item = library.get(dependency_identifier)
+            if dependency_item:
+                if recursive:
+                    delete_function = dependency_item.functionality().get('delete_with_dependencies')
+                    if delete_function:
+                        delete_function(recursive=recursive)
+                        continue
+                    else:
+                        # Fallback to normal delete if dependencies removal is not supported by data type
+                        recursive = False
+                if not recursive:
+                    delete_function = dependency_item.functionality().get('delete')
+                    if delete_function:
+                        delete_function()
+                        continue
+            else:
+                self._db.remove(dependency_identifier)
+
+        self.delete()
 
     def rename(self, new_name):
 
