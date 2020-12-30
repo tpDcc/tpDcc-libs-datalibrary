@@ -16,7 +16,7 @@ from tpDcc.libs.datalibrary.core import datapart
 
 class JpgImageData(datapart.DataPart):
 
-    DATA_TYPE = 'jpg'
+    DATA_TYPE = 'image.jpg'
     PRIORITY = 5
     EXTENSION = '.jpg'
 
@@ -30,7 +30,7 @@ class JpgImageData(datapart.DataPart):
         return False
 
     def type(self):
-        return 'JPG Image'
+        return 'image.jpg'
 
     def icon(self):
         return self.identifier()

@@ -17,7 +17,6 @@ from tpDcc import dcc
 from tpDcc.core import dcc as core_dcc
 
 from tpDcc.libs.datalibrary.core import datapart
-from tpDcc.libs.datalibrary.dccs.maya.core import utils
 
 LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
 
@@ -91,7 +90,7 @@ class MayaAsciiData(datapart.DataPart):
         return 'maya'
 
     def type(self):
-        return 'Maya ASCII'
+        return 'maya.ascii'
 
     def load_schema(self):
 
@@ -170,6 +169,7 @@ class MayaAsciiData(datapart.DataPart):
             filepath = '{}{}'.format(filepath, MayaAsciiData.EXTENSION)
 
         if not filepath or not os.path.isfile(filepath):
+            LOGGER.warning('Impossible to open Maya ASCII file data from: "{}"'.format(filepath))
             return
 
         return dcc.client().open_file(filepath)
@@ -188,7 +188,7 @@ class MayaAsciiData(datapart.DataPart):
 
         return dcc.client().import_file(filepath)
 
-    def save(self):
+    def save(self, **kwargs):
         """
         Opens OS explorer where data is located
         """
@@ -197,10 +197,17 @@ class MayaAsciiData(datapart.DataPart):
         if not filepath.endswith(MayaAsciiData.EXTENSION):
             filepath = '{}{}'.format(filepath, MayaAsciiData.EXTENSION)
 
-        if not filepath or os.path.isfile(filepath):
+        if not filepath:
+            LOGGER.warning('Impossible to save Maya ASCII file because save file path not defined!')
             return
 
-        return dcc.client().save_dcc_file(filepath)
+        LOGGER.debug('Saving {} | {}'.format(filepath, kwargs))
+
+        result = dcc.client().save_dcc_file(filepath)
+
+        LOGGER.debug('Saved {} successfully!'.format(filepath))
+
+        return result
 
     def clean_student_license(self):
         file_path = self.format_identifier()

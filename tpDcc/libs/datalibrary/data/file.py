@@ -9,11 +9,8 @@ from __future__ import print_function, division, absolute_import
 
 import os
 import re
-import time
-import locale
-import getpass
 
-from tpDcc.libs.python import python, fileio, path as path_utils
+from tpDcc.libs.python import fileio, path as path_utils
 
 from tpDcc.libs.datalibrary.core import datapart
 
@@ -93,12 +90,10 @@ class FileData(datapart.DataPart):
         file_path = self.format_identifier()
         print('Opening : %s' % file_path)
 
-    def save(self):
+    def save(self, **kwargs):
         file_path = self.format_identifier()
 
         fileio.create_file(file_path)
-
-        self._db.sync()
 
     def delete(self):
 

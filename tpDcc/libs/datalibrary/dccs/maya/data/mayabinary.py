@@ -47,7 +47,7 @@ class MayaBinaryData(datapart.DataPart):
         return 'maya'
 
     def type(self):
-        return 'Maya Binary'
+        return 'maya.binary'
 
     def functionality(self):
         return dict(
@@ -69,7 +69,7 @@ class MayaBinaryData(datapart.DataPart):
 
         dcc.client().open_file(filepath)
 
-    def save(self):
+    def save(self, **kwargs):
         """
         Opens OS explorer where data is located
         """

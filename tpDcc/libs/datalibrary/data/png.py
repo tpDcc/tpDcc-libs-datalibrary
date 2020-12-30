@@ -16,7 +16,7 @@ from tpDcc.libs.datalibrary.core import datapart
 
 class PngImageData(datapart.DataPart):
 
-    DATA_TYPE = 'png'
+    DATA_TYPE = 'image.png'
     PRIORITY = 5
     EXTENSION = '.png'
 
@@ -30,7 +30,7 @@ class PngImageData(datapart.DataPart):
         return False
 
     def type(self):
-        return 'PNG Image'
+        return 'image.png'
 
     def icon(self):
         return self.identifier()

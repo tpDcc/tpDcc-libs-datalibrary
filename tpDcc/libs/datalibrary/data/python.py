@@ -57,7 +57,9 @@ class PythonData(datapart.DataPart):
     # BASE
     # ============================================================================================================
 
-    def save(self, lines=None):
+    def save(self, **kwargs):
+
+        lines = kwargs.get('lines', None)
 
         file_path = fileio.create_file(self.format_identifier())
         if not os.path.isfile(file_path):

@@ -77,7 +77,7 @@ class FolderData(datapart.DataPart):
 
         return path_utils.clean_path(os.path.dirname(self.format_identifier()))
 
-    def save(self):
+    def save(self, **kwargs):
 
         new_folder = folder.create_folder(self.format_identifier())
 
