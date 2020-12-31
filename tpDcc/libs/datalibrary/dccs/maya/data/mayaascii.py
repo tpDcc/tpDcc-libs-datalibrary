@@ -25,14 +25,17 @@ class MayaAsciiData(datapart.DataPart):
 
     DATA_TYPE = 'maya.ascii'
     MENU_ICON = 'maya'
+    MENU_NAME = 'Maya ASCII'
     PRIORITY = 10
     EXTENSION = '.ma'
 
     _has_trait = re.compile('\.ma$', re.I)
 
     @classmethod
-    def can_represent(cls, identifier):
+    def can_represent(cls, identifier, only_extension=False):
         if MayaAsciiData._has_trait.search(identifier):
+            if only_extension:
+                return True
             if os.path.isfile(identifier):
                 return True
 
@@ -42,35 +45,30 @@ class MayaAsciiData(datapart.DataPart):
     def supported_dccs(cls):
         return [core_dcc.Dccs.Maya]
 
-    @classmethod
-    def menu_name(cls):
-        return 'Maya ASCII'
-
-    @classmethod
-    def save_schema(cls):
-        """
-        Returns the schema used for saving the item
-        :return: dict
-        """
-
-        return [
-            {
-                'name': 'folder',
-                'type': 'path',
-                'layout': 'vertical',
-                'visible': False
-            },
-            {
-                "name": "name",
-                "type": "string",
-                "layout": "vertical"
-            },
-            {
-                "name": "objects",
-                "type": "objects",
-                "layout": "vertical"
-            }
-        ]
+    # def save_schema(cls):
+    #     """
+    #     Returns the schema used for saving the item
+    #     :return: dict
+    #     """
+    #
+    #     return [
+    #         {
+    #             'name': 'folder',
+    #             'type': 'path',
+    #             'layout': 'vertical',
+    #             'visible': False
+    #         },
+    #         {
+    #             "name": "name",
+    #             "type": "string",
+    #             "layout": "vertical"
+    #         },
+    #         {
+    #             "name": "objects",
+    #             "type": "objects",
+    #             "layout": "vertical"
+    #         }
+    #     ]
 
     @classmethod
     def metadata_dict(cls):
@@ -89,8 +87,14 @@ class MayaAsciiData(datapart.DataPart):
     def icon(self):
         return 'maya'
 
+    def extension(self):
+        return '.ma'
+
     def type(self):
         return 'maya.ascii'
+
+    def menu_name(self):
+        return 'Maya ASCII'
 
     def load_schema(self):
 

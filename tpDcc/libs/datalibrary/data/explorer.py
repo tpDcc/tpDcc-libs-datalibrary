@@ -27,7 +27,11 @@ class ExplorerData(datapart.DataPart):
     # ============================================================================================================
 
     @classmethod
-    def can_represent(cls, identifier):
+    def can_represent(cls, identifier, only_extension=False):
+
+        if only_extension:
+            return True
+
         try:
             if os.path.exists(identifier):
                 return True

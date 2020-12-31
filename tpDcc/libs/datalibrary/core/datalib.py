@@ -416,6 +416,8 @@ class DataLibrary(object):
             user.decode(locale.getpreferredencoding())
         modified = timedate.get_date_and_time()
 
+        current_dependencies = self.get_dependencies(identifier, as_uuid=True)
+
         with sqlite.ConnectionContext(self._id, commit=True) as connection:
             self._execute(connection, 'move', replacements={
                 '$(IDENTIFIER)': identifier, '$(NEW_IDENTIFIER)': new_identifier, '$(NEW_UUID)': new_uuid,
@@ -424,7 +426,7 @@ class DataLibrary(object):
         self.rename_metadata(current_uuid, new_uuid)
         self.rename_thumb(current_uuid, new_uuid)
         self.rename_version(current_uuid, new_uuid)
-        self.rename_dependency(current_uuid, new_uuid)
+        self.rename_dependency(current_uuid, new_uuid, current_dependencies)
 
     def remove(self, identifier, recursive=True):
         """
@@ -479,11 +481,12 @@ class DataLibrary(object):
         settings[key] = current_settings
         self.save_settings(settings)
 
-    def get(self, identifier):
+    def get(self, identifier, only_extension=False):
         """
         Returns a composite binding of a DataPart plugin, bringing together all the plugins which can viably
         represent this data
         :param identifier: data identifier to be passed to the DataPart
+        :param only_extension: If True, only extensions will be checked during data composition
         :return: DataPart composite
         """
 
@@ -495,7 +498,7 @@ class DataLibrary(object):
 
         for data_plugin in self._data_plugins:
 
-            if data_plugin.can_represent(identifier):
+            if data_plugin.can_represent(identifier, only_extension=only_extension):
 
                 # Skip data that are not supported in current DCC
                 supported_dccs = data_plugin.supported_dccs()

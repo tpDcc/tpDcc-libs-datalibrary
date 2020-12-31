@@ -19,14 +19,17 @@ class MayaBinaryData(datapart.DataPart):
 
     DATA_TYPE = 'maya.binary'
     MENU_ICON = 'maya'
+    MENU_NAME = 'Maya Binary'
     PRIORITY = 10
     EXTENSION = '.mb'
 
     _has_trait = re.compile('\.mb$', re.I)
 
     @classmethod
-    def can_represent(cls, identifier):
+    def can_represent(cls, identifier, only_extension=False):
         if MayaBinaryData._has_trait.search(identifier):
+            if only_extension:
+                return True
             if os.path.isfile(identifier):
                 return True
 
@@ -36,18 +39,20 @@ class MayaBinaryData(datapart.DataPart):
     def supported_dccs(cls):
         return [core_dcc.Dccs.Maya]
 
-    @classmethod
-    def menu_name(cls):
-        return 'Maya Binary'
-
     def label(self):
         return os.path.basename(self.identifier())
 
     def icon(self):
         return 'maya'
 
+    def extension(self):
+        return '.mb'
+
     def type(self):
         return 'maya.binary'
+
+    def menu_name(self):
+        return 'Maya Binary'
 
     def functionality(self):
         return dict(

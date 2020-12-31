@@ -19,6 +19,7 @@ class PythonData(datapart.DataPart):
 
     DATA_TYPE = 'script.python'
     MENU_ICON = 'python'
+    MENU_NAME = 'Python Script'
     PRIORITY = 5
     EXTENSION = '.py'
 
@@ -29,15 +30,13 @@ class PythonData(datapart.DataPart):
     # ============================================================================================================
 
     @classmethod
-    def can_represent(cls, identifier):
+    def can_represent(cls, identifier, only_extension=False):
         if PythonData._has_trait.search(identifier):
+            if only_extension:
+                return True
             if os.path.isfile(identifier):
                 return True
         return False
-
-    @classmethod
-    def menu_name(cls):
-        return 'Python Script'
 
     def type(self):
         return 'script.python'
@@ -47,6 +46,12 @@ class PythonData(datapart.DataPart):
 
     def label(self):
         return os.path.basename(self.identifier())
+
+    def extension(self):
+        return '.py'
+
+    def menu_name(self):
+        return 'Python Script'
 
     def functionality(self):
         return dict(

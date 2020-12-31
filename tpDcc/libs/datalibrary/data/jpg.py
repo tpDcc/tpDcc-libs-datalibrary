@@ -23,8 +23,10 @@ class JpgImageData(datapart.DataPart):
     _has_trait = re.compile('\.jpg$', re.I)
 
     @classmethod
-    def can_represent(cls, identifier):
+    def can_represent(cls, identifier, only_extension=False):
         if JpgImageData._has_trait.search(identifier):
+            if only_extension:
+                return True
             if os.path.isfile(identifier):
                 return True
         return False
@@ -34,6 +36,9 @@ class JpgImageData(datapart.DataPart):
 
     def icon(self):
         return self.identifier()
+
+    def extension(self):
+        return '.jpg'
 
     def functionality(self):
         return dict(show=partial(os.system, self.identifier(),))

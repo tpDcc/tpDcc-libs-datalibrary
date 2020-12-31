@@ -27,10 +27,16 @@ class FileData(datapart.DataPart):
     # ============================================================================================================
 
     @classmethod
-    def can_represent(cls, identifier):
+    def can_represent(cls, identifier, only_extension=False):
         try:
-            if os.path.isfile(identifier):
+            if only_extension:
+                extension = os.path.splitext(os.path.basename(identifier))[-1]
+                if not extension:
+                    return False
                 return True
+            else:
+                if os.path.isfile(identifier):
+                    return True
         except Exception:
             pass
 
@@ -45,6 +51,82 @@ class FileData(datapart.DataPart):
     def label(self):
         return os.path.basename(self.identifier())
 
+    def mandatory_tags(self):
+
+        return os.path.splitext(os.path.basename(self.identifier()))
+
+    def save_schema(self):
+        """
+        Returns the schema used for saving the item
+        :return: dict
+        """
+
+        return [
+            {
+                'name': 'folder',
+                'type': 'path',
+                'layout': 'vertical',
+                'visible': False,
+                'errorVisible': True
+            },
+            {
+                'name': 'name',
+                'type': 'string',
+                'layout': 'vertical',
+                'errorVisible': True
+            },
+            {
+                'name': 'comment',
+                'type': 'text',
+                'layout': 'vertical'
+            }
+        ]
+
+    def export_schema(self):
+        """
+        Returns the schema used for exporting the item
+        :return: dict
+        """
+
+        return [
+            {
+                'name': 'folder',
+                'type': 'path',
+                'layout': 'vertical',
+                'visible': False,
+                'readOnly': True
+            },
+            {
+                'name': 'name',
+                'type': 'string',
+                'layout': 'vertical',
+                'readOnly': True,
+            },
+            {
+                'name': 'comment',
+                'type': 'text',
+                'layout': 'vertical'
+            }
+        ]
+
+    def save_validator(self, **kwargs):
+        """
+        Validates the given save fields
+        Called when an input field has changed
+        :param kwargs: dict
+        :return: list(dict)
+        """
+
+        fields = list()
+
+        if not kwargs.get('folder'):
+            fields.append({
+                'name': 'folder', 'error': 'No folder selected. Please select a target folder.'})
+        if not kwargs.get('name'):
+            fields.append({'name': 'name', 'error': 'No name specified. Please set a name before saving.'})
+
+        return fields
+
     def functionality(self):
         return dict(
             directory=self.directory,
@@ -57,10 +139,6 @@ class FileData(datapart.DataPart):
             delete=self.delete,
             delete_with_dependencies=self.delete_with_dependencies
         )
-
-    def mandatory_tags(self):
-
-        return os.path.splitext(os.path.basename(self.identifier()))
 
     # ============================================================================================================
     # BASE

@@ -19,6 +19,7 @@ class FolderData(datapart.DataPart):
 
     DATA_TYPE = 'folder'
     MENU_ICON = 'folder'
+    MENU_NAME = 'Folder'
     PRIORITY = 2
 
     _split = re.compile('/|\.|,|-|:|_', re.I)
@@ -28,15 +29,13 @@ class FolderData(datapart.DataPart):
     # ============================================================================================================
 
     @classmethod
-    def can_represent(cls, identifier):
+    def can_represent(cls, identifier, only_extension=False):
+        if only_extension:
+            return False
         if os.path.isdir(identifier):
             return True
 
         return False
-
-    @classmethod
-    def menu_name(cls):
-        return 'Folder'
 
     def label(self):
         return os.path.basename(self.identifier())
@@ -46,6 +45,9 @@ class FolderData(datapart.DataPart):
 
     def type(self):
         return 'folder'
+
+    def menu_name(self):
+        return 'Folder'
 
     def mandatory_tags(self):
         tags = [
@@ -116,12 +118,27 @@ class FolderData(datapart.DataPart):
     def move(self, target_path):
         current_path = self.format_identifier()
 
+        before_identifiers = list()
+        folders = folder.get_folders(current_path, recursive=True, full_path=True)
+        files = folder.get_files(current_path, recursive=True, full_path=True)
+        for file_folder in folders + files:
+            before_identifiers.append(file_folder)
+
+        target_path = path_utils.join_path(target_path, os.path.basename(current_path))
         valid = folder.move_folder(current_path, target_path)
         if not valid:
             return None
 
-        # We force sync after doing move operation
-        self._db.sync()
+        self._db.move(current_path, target_path)
+
+        after_identifiers = list()
+        folders = folder.get_folders(target_path, recursive=True, full_path=True)
+        files = folder.get_files(target_path, recursive=True, full_path=True)
+        for file_folder in folders + files:
+            after_identifiers.append(file_folder)
+
+        for identifier, new_identifier in zip(before_identifiers, after_identifiers):
+            self._db.move(identifier, new_identifier)
 
         return target_path
 

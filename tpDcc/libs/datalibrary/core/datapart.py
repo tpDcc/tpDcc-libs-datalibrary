@@ -36,6 +36,7 @@ class DataPart(composite.Composition):
 
     # Default icon used by the item in menus
     MENU_ICON = 'tpDcc'
+    MENU_NAME = ''
 
     # Defines whether or not this item allow deletion and nested hierarchies
     ENABLE_DELETE = True
@@ -48,10 +49,9 @@ class DataPart(composite.Composition):
 
         self._id = identifier
         self._db = db
-        self._dependencies = dict()
 
-        if self.EXTENSION and not self._id.endswith(self.EXTENSION):
-            self._id = '{}{}'.format(self._id, self.EXTENSION)
+        if self.extension() and not self._id.endswith(self.extension()):
+            self._id = '{}{}'.format(self._id, self.extension())
 
     def __repr__(self):
         base_repr = super(DataPart, self).__repr__()
@@ -60,8 +60,8 @@ class DataPart(composite.Composition):
     def __eq__(self, other):
         return self.format_identifier() == other.format_identifier()
 
-    def __ne__(self, other):
-        return self.format_identifier() != other.format_identifier()
+    # def __ne__(self, other):
+    #     return self.format_identifier() != other.format_identifier()
 
     # ============================================================================================================
     # PROPERTIES
@@ -76,10 +76,11 @@ class DataPart(composite.Composition):
     # ============================================================================================================
 
     @classmethod
-    def can_represent(cls, identifier):
+    def can_represent(cls, identifier, only_extension=False):
         """
         Returns whether or not this plugin can represent the given identifier
         :param identifier: str, data identifier. This could be a URL, a file path, a UUID, etc
+        :param only_extension: bool, If True, only trait (usually extension) will be checked
         :return: bool
         """
 
@@ -94,42 +95,6 @@ class DataPart(composite.Composition):
         """
 
         return list()
-
-    @classmethod
-    def menu_name(cls):
-        """
-        Defines the display name that should appear in the create data menus. If not given, data part will not appear
-        in data creation menus
-        :return: str or None
-        """
-
-        return None
-
-    @classmethod
-    def save_schema(cls):
-        """
-        Returns the schema used for saving the item
-        :return: dict
-        """
-
-        return [
-            {
-                'name': 'folder',
-                'type': 'path',
-                'layout': 'vertical',
-                'visible': False
-            },
-            {
-                'name': 'name',
-                'type': 'string',
-                'layout': 'vertical'
-            },
-            {
-                'name': 'comment',
-                'type': 'text',
-                'layout': 'vertical'
-            }
-        ]
 
     @composite.first_true
     def type(self):
@@ -161,6 +126,25 @@ class DataPart(composite.Composition):
 
         return False
 
+    @composite.first_true
+    def menu_name(self):
+        """
+        Defines the display name that should appear in the create data menus. If not given, data part will not appear
+        in data creation menus
+        :return: str or None
+        """
+
+        return None
+
+    @composite.first_true
+    def extension(self):
+        """
+        Returns data extension
+        :return: str
+        """
+
+        return None
+
     @composite.extend_unique
     def mandatory_tags(self):
         """
@@ -171,7 +155,7 @@ class DataPart(composite.Composition):
 
         return None
 
-    @composite.update_dictionary
+    @composite.update_dictionary_unique
     def functionality(self):
         """
         Exposes per-data functionality in the form of a dictionary where the key is the string accessor, and the value
@@ -191,6 +175,24 @@ class DataPart(composite.Composition):
 
         return list()
 
+    @composite.extend_results
+    def save_schema(self):
+        """
+        Returns the schema used for saving the item
+        :return: dict
+        """
+
+        return composite.Ignore
+
+    @composite.extend_results
+    def export_schema(self):
+        """
+        Returns the schema used for exporting the item
+        :return: dict
+        """
+
+        return composite.Ignore
+
     @composite.update_dictionary
     def metadata_dict(self):
         """
@@ -201,11 +203,11 @@ class DataPart(composite.Composition):
         return composite.Ignore
 
     @composite.extend_results
-    def save_validator(self, **fields):
+    def save_validator(self, **kwargs):
         """
         Validates the given save fields
         Called when an input field has changed
-        :param fields: dict
+        :param kwargs: dict
         :return: list(dict)
         """
 
@@ -257,7 +259,7 @@ class DataPart(composite.Composition):
         """
 
         directory, name, extension = path_utils.split_path(self.format_identifier())
-        extension = extension or self.EXTENSION
+        extension = extension or self.extension()
         if extension:
             return path_utils.clean_path('{}{}'.format(name, extension))
 
@@ -415,7 +417,30 @@ class DataPart(composite.Composition):
     # DEPENDENCIES
     # ============================================================================================================
 
-    def update_dependencies(self, recursive=True):
+    def get_dependencies(self):
+        if not self.library:
+            return dict()
+
+        deps_dict = self.library.get_dependencies(self.format_identifier(), as_uuid=False)
+        if not deps_dict:
+            return dict()
+
+        result = dict()
+
+        for identifier, dependency_name in deps_dict.items():
+            item = self.library.get(identifier)
+            if not item:
+                continue
+            if dependency_name in result:
+                if not isinstance(result[dependency_name], list):
+                    result[dependency_name] = [result[dependency_name]]
+                result[dependency_name].append(item.format_identifier())
+            else:
+                result[dependency_name] = item.format_identifier()
+
+        return result
+
+    def update_dependencies(self, dependencies=None, recursive=True):
 
         dependency_file_name = '{}.json'.format(self._db.get_uuid(self.format_identifier()))
         dependency_path = path_utils.join_path(self._db.get_dependencies_path(), dependency_file_name)
@@ -429,7 +454,8 @@ class DataPart(composite.Composition):
             if not dependency:
                 continue
             all_dependencies.update({dependency: dependency_name})
-        all_dependencies.update(self._dependencies)
+        if dependencies:
+            all_dependencies.update(dependencies)
 
         for dependency, dependency_name in all_dependencies.items():
             self._db.add_dependency(self.format_identifier(), dependency, dependency_name)
@@ -446,5 +472,5 @@ class DataPart(composite.Composition):
                 dependency_item = self._db.get(dependency)
                 if not dependency_item:
                     continue
-                dependency_item._dependencies[self.format_identifier()] = self.type()
-                dependency_item.update_dependencies(recursive=False)
+                dependency_item.update_dependencies(
+                    dependencies={self.format_identifier(): self.type()}, recursive=False)

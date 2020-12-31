@@ -23,8 +23,10 @@ class PngImageData(datapart.DataPart):
     _has_trait = re.compile('\.png$', re.I)
 
     @classmethod
-    def can_represent(cls, identifier):
+    def can_represent(cls, identifier, only_extension=False):
         if PngImageData._has_trait.search(identifier):
+            if only_extension:
+                return True
             if os.path.isfile(identifier):
                 return True
         return False
@@ -34,6 +36,9 @@ class PngImageData(datapart.DataPart):
 
     def icon(self):
         return self.identifier()
+
+    def extension(self):
+        return '.png'
 
     def functionality(self):
         return dict(show=partial(os.system, self.identifier(),))

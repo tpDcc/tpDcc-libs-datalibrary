@@ -20,6 +20,7 @@ class TextData(datapart.DataPart):
 
     DATA_TYPE = 'txt'
     MENU_ICON = 'document'
+    MENU_NAME = 'Text File'
     PRIORITY = 4
     EXTENSION = '.txt'
 
@@ -30,22 +31,26 @@ class TextData(datapart.DataPart):
     # ============================================================================================================
 
     @classmethod
-    def can_represent(cls, identifier):
+    def can_represent(cls, identifier, only_extension=False):
         if TextData._has_trait.search(identifier):
+            if only_extension:
+                return True
             if os.path.isfile(identifier):
                 return True
 
         return False
 
-    @classmethod
-    def menu_name(cls):
-        return 'Text File'
-
     def label(self):
         return os.path.basename(self.identifier())
 
+    def extension(self):
+        return '.txt'
+
     def icon(self):
         return 'document'
+
+    def menu_name(self):
+        return 'Text File'
 
     def mandatory_tags(self):
         return list()
