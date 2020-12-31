@@ -2,28 +2,29 @@
 # -*- coding: utf-8 -*-
 
 """
-Module that contains Python script file item implementation
+Module that contains text data part implementation
 """
 
 from __future__ import print_function, division, absolute_import
 
-import os
 import re
+import os
+import subprocess
 
 from tpDcc.libs.python import fileio
 
 from tpDcc.libs.datalibrary.core import datapart
 
 
-class PythonData(datapart.DataPart):
+class TextData(datapart.DataPart):
 
-    DATA_TYPE = 'script.python'
-    MENU_ICON = 'python'
-    MENU_NAME = 'Python Script'
-    PRIORITY = 5
-    EXTENSION = '.py'
+    DATA_TYPE = 'txt'
+    MENU_ICON = 'document'
+    MENU_NAME = 'Text File'
+    PRIORITY = 4
+    EXTENSION = '.txt'
 
-    _has_trait = re.compile('\.py$', re.I)
+    _has_trait = re.compile('\.txt$', re.I)
 
     # ============================================================================================================
     # OVERRIDES
@@ -31,30 +32,32 @@ class PythonData(datapart.DataPart):
 
     @classmethod
     def can_represent(cls, identifier, only_extension=False):
-        if PythonData._has_trait.search(identifier):
+        if TextData._has_trait.search(identifier):
             if only_extension:
                 return True
             if os.path.isfile(identifier):
                 return True
+
         return False
-
-    def type(self):
-        return 'script.python'
-
-    def icon(self):
-        return 'python'
 
     def label(self):
         return os.path.basename(self.identifier())
 
     def extension(self):
-        return '.py'
+        return '.txt'
+
+    def icon(self):
+        return 'document'
 
     def menu_name(self):
-        return 'Python Script'
+        return 'Text File'
+
+    def mandatory_tags(self):
+        return list()
 
     def functionality(self):
         return dict(
+            edit=self.edit,
             save=self.save
         )
 
@@ -62,16 +65,12 @@ class PythonData(datapart.DataPart):
     # BASE
     # ============================================================================================================
 
-    def save(self, **kwargs):
+    def edit(self):
+        subprocess.Popen(['notepad', self.identifier()])
 
-        lines = kwargs.get('lines', None)
+    def save(self):
+        file_path = self.format_identifier()
 
-        file_path = fileio.create_file(self.format_identifier())
-        if not os.path.isfile(file_path):
-            return False, 'Was not possible to create Python file'
+        fileio.create_file(file_path)
 
-        lines = lines or ["if __name__ == '__main__':\n\tpass"]
-
-        fileio.write_lines(file_path, lines)
-
-        return True, ''
+        self._db.sync()

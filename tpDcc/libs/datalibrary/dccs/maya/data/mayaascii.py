@@ -2,161 +2,252 @@
 # -*- coding: utf-8 -*-
 
 """
-Module that contains Maya ASCII file item implementation
+Module that contains Maya ascii data part implementation
 """
 
 from __future__ import print_function, division, absolute_import
 
 import os
+import re
 import stat
 import shutil
 import logging
 
 from tpDcc import dcc
-from tpDcc.libs.python import path as path_utils
+from tpDcc.core import dcc as core_dcc
 
-from tpDcc.libs.datalibrary.dccs.maya.core import dataitem
-from tpDcc.libs.datalibrary.dccs.maya.core import transfer
+from tpDcc.libs.datalibrary.core import datapart
 
 LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
 
 
-class MayaAsciiData(dataitem.MayaDataItem):
+class MayaAsciiData(datapart.DataPart):
 
+    DATA_TYPE = 'maya.ascii'
+    MENU_ICON = 'maya'
+    MENU_NAME = 'Maya ASCII'
+    PRIORITY = 10
     EXTENSION = '.ma'
 
-    ICON_NAME = 'maya'
-    MENU_NAME = 'Maya ASCII'
+    _has_trait = re.compile('\.ma$', re.I)
 
-    TRANSFER_CLASS = transfer.MayaTransferObject
+    @classmethod
+    def can_represent(cls, identifier, only_extension=False):
+        if MayaAsciiData._has_trait.search(identifier):
+            if only_extension:
+                return True
+            if os.path.isfile(identifier):
+                return True
 
-    # ============================================================================================================
-    # OVERRIDES
-    # ============================================================================================================
+        return False
 
-    def save_schema(self):
-        """
-        Returns the schema used for saving the item
-        :return: dict
-        """
+    @classmethod
+    def supported_dccs(cls):
+        return [core_dcc.Dccs.Maya]
+
+    # def save_schema(cls):
+    #     """
+    #     Returns the schema used for saving the item
+    #     :return: dict
+    #     """
+    #
+    #     return [
+    #         {
+    #             'name': 'folder',
+    #             'type': 'path',
+    #             'layout': 'vertical',
+    #             'visible': False
+    #         },
+    #         {
+    #             "name": "name",
+    #             "type": "string",
+    #             "layout": "vertical"
+    #         },
+    #         {
+    #             "name": "objects",
+    #             "type": "objects",
+    #             "layout": "vertical"
+    #         }
+    #     ]
+
+    @classmethod
+    def metadata_dict(cls):
+
+        # references = utils.get_reference_data(self.metadata().get('objects', list()))
+
+        return {
+            # 'references': references,
+            'references': list(),
+            'mayaVersion': str(dcc.client().get_version())
+        }
+
+    def label(self):
+        return os.path.basename(self.identifier())
+
+    def icon(self):
+        return 'maya'
+
+    def extension(self):
+        return '.ma'
+
+    def type(self):
+        return 'maya.ascii'
+
+    def menu_name(self):
+        return 'Maya ASCII'
+
+    def load_schema(self):
 
         return [
             {
-                'name': 'folder',
-                'type': 'path',
-                'layout': 'vertical',
-                'visible': False
+                'name': 'namespaceGroup',
+                'title': 'Namespace',
+                'type': 'group',
+                'order': 10,
             },
             {
-                "name": "name",
-                "type": "string",
-                "layout": "vertical"
+                'name': 'namespaceOption',
+                'title': '',
+                'type': 'radio',
+                'value': 'From file',
+                'items': ['From file', 'From selection', 'Use custom'],
+                'persistent': True,
+                'persistentKey': 'MayaAsciiData',
             },
             {
-                "name": "objects",
-                "type": "objects",
-                "layout": "vertical"
+                'name': 'namespaces',
+                'title': '',
+                'type': 'tags',
+                'value': [],
+                'items': dcc.client().list_namespaces(),
+                'persistent': True,
+                'label': {'visible': False},
+                'persistentKey': 'MayaAsciiData'
             }
         ]
 
-    def load(self, *args, **kwargs):
+    def load_validator(self, **options):
+        namespaces = options.get('namespaces')
+        namespace_option = options.get('namespaceOption')
+
+        if namespace_option == 'From file':
+            namespaces = list()
+            # namespaces = self.metadata().get('namespaces', list())
+        elif namespace_option == 'From selection':
+            namespaces = dcc.client().list_namespaces_from_selection() or ['']
+
+        field_changed = options.get('fieldChanged')
+        if field_changed == 'namespaces':
+            options['namespaceOption'] = 'Use custom'
+        else:
+            options['namespaceOption'] = namespaces
+
+        self._current_load_values = options
+
+        return [
+            {
+                "name": "namespaces",
+                "value": options.get("namespaces")
+            },
+            {
+                "name": "namespaceOption",
+                "value": options.get("namespaceOption")
+            }
+        ]
+
+    def functionality(self):
+        return dict(
+            load=self.load,
+            import_data=self.import_data,
+            save=self.save,
+            clean_student_license=self.clean_student_license
+        )
+
+    def load(self):
         """
-        Loads the data from the transfer object
-        :param args: list
-        :param kwargs: dict
-        """
-
-        LOGGER.debug('Loading: {} | {}'.format(self.path, kwargs))
-
-        result = dcc.client().open_file(file_path=self.path)
-        dcc.client().fit_view(animation=True)
-
-        LOGGER.debug('Loaded: {} | {}'.format(self.path, kwargs))
-
-        return result
-
-    def import_data(self, *args, **kwargs):
-        """
-        Imports data to current DCC
-        :param args: list
-        :param kwargs: dict
-        """
-
-        LOGGER.debug('Importing: {} | {}'.format(self.path, kwargs))
-
-        result = dcc.client().import_file(file_path=self.path)
-
-        LOGGER.debug('Imported: {} | {}'.format(self.path, kwargs))
-
-        return result
-
-    def reference_data(self, *args, **kwargs):
-        """
-        References data to current DCC
-        :param args: list
-        :param kwargs: dict
-        """
-
-        LOGGER.debug('Referencing: {} | {}'.format(self.path, kwargs))
-
-        result = dcc.client().reference_file(file_path=self.path)
-
-        LOGGER.debug('Referenced: {} | {}'.format(self.path, kwargs))
-
-        return result
-
-    def save(self, thumbnail='', **kwargs):
-        """
-        Saves all the given data to the item path on disk
-        :param thumbnail: str
-        :param kwargs: dict
+        Opens OS explorer where data is located
         """
 
-        LOGGER.debug('Saving {} | {}'.format(self.path, kwargs))
+        filepath = self.format_identifier()
+        if not filepath.endswith(MayaAsciiData.EXTENSION):
+            filepath = '{}{}'.format(filepath, MayaAsciiData.EXTENSION)
 
-        super(MayaAsciiData, self).save(thumbnail=thumbnail, **kwargs)
-
-        item_name = kwargs.get('name', 'mayaascii')
-        save_path = self.path + '/{}{}'.format(item_name, self.EXTENSION)
-
-        # self.transfer_object(save=True).save(self.transfer_path())
-        dcc.client().save_dcc_file(save_path)
-
-        LOGGER.debug('Saved {} | {}'.format(self.path, kwargs))
-
-    # ============================================================================================================
-    # BASE
-    # ============================================================================================================
-
-    def clean_student_license(self):
-        """
-        Cleans student license from Maya ASCII file
-        """
-
-        filename = self.path
-        if not path_utils.is_file(filename):
-            LOGGER.warning('Impossible to reference invalid data file: {}'.format(filename))
+        if not filepath or not os.path.isfile(filepath):
+            LOGGER.warning('Impossible to open Maya ASCII file data from: "{}"'.format(filepath))
             return
 
-        changed = False
+        return dcc.client().open_file(filepath)
 
-        if not os.path.exists(filename):
-            LOGGER.error('File "{}" does not exists!'.format(filename))
-            return False
+    def import_data(self):
+        """
+        Imports Maya file into current Maya scene
+        """
 
-        if not self.has_student_line(filename):
-            LOGGER.info('File is already cleaned: no student line found!')
-            return False
+        filepath = self.format_identifier()
+        if not filepath.endswith(MayaAsciiData.EXTENSION):
+            filepath = '{}{}'.format(filepath, MayaAsciiData.EXTENSION)
 
-        if not filename.endswith('.ma'):
+        if not filepath or not os.path.isfile(filepath):
+            return
+
+        return dcc.client().import_file(filepath)
+
+    def save(self, **kwargs):
+        """
+        Opens OS explorer where data is located
+        """
+
+        filepath = self.format_identifier()
+        if not filepath.endswith(MayaAsciiData.EXTENSION):
+            filepath = '{}{}'.format(filepath, MayaAsciiData.EXTENSION)
+
+        if not filepath:
+            LOGGER.warning('Impossible to save Maya ASCII file because save file path not defined!')
+            return
+
+        LOGGER.debug('Saving {} | {}'.format(filepath, kwargs))
+
+        result = dcc.client().save_dcc_file(filepath)
+
+        LOGGER.debug('Saved {} successfully!'.format(filepath))
+
+        return result
+
+    def clean_student_license(self):
+        file_path = self.format_identifier()
+        if not file_path or not os.path.isfile(file_path):
+            LOGGER.warning('Impossible to clean student license in invalid data file: {}'.format(file_path))
+            return
+
+        if not file_path.endswith('.ma'):
             LOGGER.info('Maya Binary files cannot be cleaned!')
             return False
 
-        with open(filename, 'r') as f:
+        changed = False
+
+        if file_path.endswith('.mb'):
+            LOGGER.warning('Student License Check is not supported in binary files!')
+            return True
+
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
+
+        has_student_license = False
+        for line in lines:
+            if 'createNode' in line:
+                break
+            if 'fileInfo' in line and 'student' in line:
+                has_student_license = True
+                break
+        if not has_student_license:
+            LOGGER.info('File is already cleaned: no student line found!')
+            return False
+
+        with open(file_path, 'r') as f:
             lines = f.readlines()
         step = len(lines) / 4
 
-        no_student_filename = filename[:-3] + '.no_student.ma'
+        no_student_filename = file_path[:-3] + '.no_student.ma'
         with open(no_student_filename, 'w') as f:
             step_count = 0
             for line in lines:
@@ -171,8 +262,8 @@ class MayaAsciiData(dataitem.MayaDataItem):
                     step += step
 
         if changed:
-            os.chmod(filename, stat.S_IWUSR | stat.S_IREAD)
-            shutil.copy2(no_student_filename, filename)
+            os.chmod(file_path, stat.S_IWUSR | stat.S_IREAD)
+            shutil.copy2(no_student_filename, file_path)
 
             try:
                 os.remove(no_student_filename)
@@ -180,32 +271,4 @@ class MayaAsciiData(dataitem.MayaDataItem):
                 LOGGER.warning('Error while cleanup no student file process files ... >> {}'.format(exc))
                 return False
 
-            LOGGER.info('Student file cleaned successfully from file: "{}"!'.format(filename))
-
-        return True
-
-    def has_student_line(self, filename):
-        """
-        Returns True if the given Maya file has a student license on it
-        :param filename: str
-        :return: bool
-        """
-
-        if not os.path.exists(filename):
-            LOGGER.error('File "{}" does not exists!'.format(filename))
-            return False
-
-        if filename.endswith('.mb'):
-            LOGGER.warning('Student License Check is not supported in binary files!')
-            return True
-
-        with open(filename, 'r') as f:
-            lines = f.readlines()
-
-        for line in lines:
-            if 'createNode' in line:
-                return False
-            if 'fileInfo' in line and 'student' in line:
-                return True
-
-        return False
+            LOGGER.info('Cleaned student license from file: {}'.format(file_path))

@@ -2,72 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Module that contains consts definitions used by data library
+Module that contains consts definitions used by data library library
 """
 
-from __future__ import print_function, division, absolute_import
-
-from Qt.QtGui import QColor
-
 DEFAULT_LIBRARY_NAME = 'Default'
-DEFAULT_RECURSIVE_SEARCH_ENABLED = False
-DEFAULT_RECURSIVE_DEPTH = 8
-
-ITEM_DEFAULT_THUMBNAIL_NAME = 'thumbnail.jpg'
-ITEM_DEFAULT_MAX_ICON_SIZE = 256
-ITEM_DEFAULT_FONT_SIZE = 12
-ITEM_DEFAULT_PLAYHEAD_COLOR = QColor(255, 255, 255, 220)
-ITEM_DEFAULT_THUMBNAIL_COLUMN = 0
-ITEM_DEFAULT_ENABLE_THUMBNAIL_THREAD = True
-
-GROUP_ITEM_DEFAULT_FONT_SIZE = 24
-GROUP_ITEM_PADDING_LEFT = 2
-GROUP_ITEM_PADDING_RIGHT = 20
-GROUP_ITEM_HEIGHT = 28
-
-PROGRESS_BAR_VISIBLE = True
-
-ITEM_DEFAULT_MENU_ICON = ''
-ITEM_DEFAULT_MENU_ORDER = 10
-ITEM_DEFAULT_EXTENSION = ''
-
-TRASH_NAME = 'trash'
-TRASH_ENABLED = True
-ICON_BADGE_COLOR = QColor(230, 230, 0)
-
-DEFAULT_ICON_MODE = 'icon'
-DEFAULT_TABLE_MODE = 'table'
-VIEWER_DEFAULT_PADDING = 5
-VIEWER_DEFAULT_ZOOM_AMOUNT = 90
-VIEWER_DEFAULT_TEXT_HEIGHT = 20
-VIEWER_DEFAULT_WHEEL_SCROLL_STEP = 2
-VIEWER_DEFAULT_MIN_SPACING = 0
-VIEWER_DEFAULT_MAX_SPACING = 50
-VIEWER_DEFAULT_MIN_LIST_SIZE = 15
-VIEWER_DEFAULT_MIN_ICON_SIZE = 50
-VIEWER_DEFAULT_TEXT_COLOR = QColor(255, 255, 255, 200)
-VIEWER_DEFAULT_SELECTED_TEXT_COLOR = QColor(255, 255, 255, 200)
-VIEWER_DEFAULT_BACKGROUND_COLOR = QColor(255, 255, 255, 30)
-VIEWER_DEFAULT_BACKGROUND_HOVER_COLOR = QColor(255, 255, 255, 35)
-VIEWER_DEFAULT_BACKGROUND_SELECTED_COLOR = QColor(30, 150, 255)
-
-LIST_DEFAULT_DRAG_THRESHOLD = 10
-
-TREE_MINIMUM_WIDTH = 5
-TREE_DEFAULT_WIDTH = 100
-
-DEFAULT_FOLDER_ICON_COLOR = 'rgb(150, 150, 150, 100)'
-DEFAULT_FOLDER_ICON_COLORS = [
-    "rgb(239, 112, 99)",
-    "rgb(239, 207, 103)",
-    "rgb(136, 200, 101)",
-    "rgb(111, 183, 239)",
-    "rgb(199, 142, 220)",
-    DEFAULT_FOLDER_ICON_COLOR
-]
-
-DEFAULT_FOLDER_ICONS = [
-    'folder', 'user', 'character', 'inbox', 'favorite_folder', 'movie', 'camera', 'asset', 'assets', 'cloud',
-    'book', 'archive_folder', 'archive', 'circle', 'share', 'tree', 'mountain', 'trash', 'layers', 'database',
-    'video', 'face', 'hand', 'globe'
-]

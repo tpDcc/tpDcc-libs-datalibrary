@@ -179,7 +179,6 @@ def get_reference_data(objects):
 
 def index_objects(objects):
     """
-
     :param objects: list(str)
     :return: dict
     """
@@ -196,7 +195,6 @@ def index_objects(objects):
 
 def match_in_index(node, index):
     """
-
     :param node: str
     :param index: int
     :return: Node
@@ -218,7 +216,6 @@ def match_in_index(node, index):
 
 def match_names(source_objects, target_objects=None, target_namespaces=None, search=None, replace=None):
     """
-
     :param source_objects: list(str)
     :param target_objects: list(str)
     :param target_namespaces: list(str)

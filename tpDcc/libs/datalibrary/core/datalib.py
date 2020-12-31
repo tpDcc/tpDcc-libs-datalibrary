@@ -1,777 +1,80 @@
-#! /usr/bin/env python
-# -*- coding: utf-8 -*-
-
-"""
-Customizable and easy to use data library
-"""
-
-from __future__ import print_function, division, absolute_import
-
 import os
+import re
+import sys
 import time
+import json
 import copy
+import locale
+import getpass
+import sqlite3
 import logging
 from collections import OrderedDict
 
-from Qt.QtCore import Signal, QObject
+import shortuuid
 
 from tpDcc import dcc
 from tpDcc.managers import configs
-from tpDcc.libs.python import python, modules, path as path_utils
+from tpDcc.libs.python import python, timedate, fileio, jsonio, signal, version, sqlite, plugin, modules
+from tpDcc.libs.python import path as path_utils, folder as folder_utils
 
-from tpDcc.libs.datalibrary.core import consts, utils, factory
-from tpDcc.libs.datalibrary.managers import data
+from tpDcc.libs.datalibrary.core import scanner, datapart
 
 LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
 
 
-class DataLibrary(QObject):
+class DataLibrary(object):
 
-    Fields = [
-        {
-            "name": "icon",
-            "sortable": False,
-            "groupable": False,
-        },
-        {
-            "name": "name",
-            "sortable": True,
-            "groupable": False,
-        },
-        {
-            "name": "path",
-            "sortable": True,
-            "groupable": False,
-        },
-        {
-            "name": "type",
-            "sortable": True,
-            "groupable": True,
-        },
-        {
-            "name": "folder",
-            "sortable": True,
-            "groupable": False,
-        },
-        {
-            "name": "category",
-            "sortable": True,
-            "groupable": True,
-        },
-        {
-            "name": "modified",
-            "sortable": True,
-            "groupable": False,
-        },
-        {
-            "name": "Custom Order",
-            "sortable": True,
-            "groupable": False,
-        },
-    ]
+    SQL_COMMANDS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'sql')
 
-    dataChanged = Signal()
-    searchStarted = Signal()
-    searchFinished = Signal()
-    searchTimeFinished = Signal()
+    def __init__(self, identifier, load_data_plugins_from_settings=True, relative_paths=True, thumbs_path=None):
 
-    def __init__(self, path=None, library_window=None, items_factory=None, *args):
-        super(DataLibrary, self).__init__(*args)
+        self.scanned = signal.Signal()
+        self.syncCompleted = signal.Signal()
+        self.searchStarted = signal.Signal()
+        self.searchFinished = signal.Signal()
+        self.dataChanged = signal.Signal()
 
-        self._path = path
-        self._mtime = None
-        self._data = dict()
-        self._items = list()
+        self._id = identifier
+        self._relative_paths = relative_paths
+        self._commands = self._get_commands_dict()
+
         self._fields = list()
-        self._sort_by = list()
-        self._group_by = list()
         self._results = list()
         self._grouped_results = dict()
         self._queries = dict()
         self._global_queries = dict()
         self._search_time = 0
         self._search_enabled = True
-        self._library_window = library_window
-        self._factory = items_factory or factory.ItemsFactory()
 
-        self.set_path(path)
-        self.set_dirty(True)
+        plugin_locations = list()
+        if os.path.exists(identifier):
+            plugin_locations = self.plugin_locations()
+        plugin_locations.extend(self.default_plugin_paths())
+        plugin_locations = list(set(plugin_locations))
 
-    # =================================================================================================================
-    # BASE
-    # =================================================================================================================
+        self._scan_factory = plugin.PluginFactory(scanner.BaseScanner, paths=plugin_locations, plugin_id='SCAN_TYPE')
+        self._data_factory = plugin.PluginFactory(datapart.DataPart, paths=plugin_locations, plugin_id='DATA_TYPE')
 
-    def path(self):
-        """
-        Returns the path where library is located
-        :return: str
-        """
+        if load_data_plugins_from_settings:
+            self._register_data_plugins_classes_from_config()
 
-        return self._path
+        self._sort_data_plugins()
 
-    def set_path(self, value):
-        """
-         Sets path where muscle data is located
-         :param value: str
-         """
+    # ============================================================================================================
+    # PROPERTIES
+    # ============================================================================================================
 
-        self._path = value
+    @property
+    def identifier(self):
+        return self._id
 
-    def add_paths(self, paths, data=None):
-        """
-        Adds the give npath and data to the database
-        :param paths: list(str)
-        :param data: dict or None
-        """
+    @property
+    def data_factory(self):
+        return self._data_factory
 
-        data = data or dict()
-        self.update_paths(paths, data)
-
-    def update_paths(self, paths, data):
-        """
-        Updates the given paths with the given data in the database
-        :param paths: list(str)
-        :param data: dict
-        """
-
-        current_data = self._read()
-        paths = path_utils.normalize_paths(paths)
-        for path in paths:
-            if path in current_data:
-                current_data[path].update(data)
-            else:
-                current_data[path] = data
-
-        self._save(current_data)
-
-    def copy_path(self, source, target):
-        """
-        Copy the given source path to the given target path
-        :param source: str
-        :param target:str
-        :return: str
-        """
-
-        source = self.item_from_path(source)
-        if not source:
-            return None
-
-        self.add_paths([target])
-        target_data = self.item_from_path(target)
-        if target_data:
-            target_data.sync_item_data()
-
-        if os.path.isfile(source.path):
-            target = os.path.join(target, os.path.splitext(os.path.basename(source.path))[0])
-            target_data = self.item_from_path(target, data_type=source.DATA_TYPE)
-            if target_data:
-                target_data.sync_item_data()
-
-        return target
-
-    def rename_path(self, source, target):
-        """
-        Renames the source path to the given name
-        :param source: str
-        :param target: str
-        :return: str
-        """
-
-        utils.rename_path_in_file(self.database_path(), source, target)
-        self.set_dirty(True)
-
-        return target
-
-    def remove_path(self, path):
-        """
-        Removes the given path from the database
-        :param path: str
-        """
-
-        self.remove_paths([path])
-
-    def remove_paths(self, paths):
-        """
-        Removes the given paths from the database
-        :param paths: list(str)
-        """
-
-        data = self._read()
-        paths = path_utils.normalize_paths(paths)
-        for path in paths:
-            if path in data:
-                del data[path]
-
-        self._save(data)
-
-    def database_path(self):
-        """
-        Returns path where library data base is located
-        :return: str
-        """
-
-        datalib_path = None
-        datalib_config = configs.get_library_config('tpDcc-libs-datalibrary')
-        if datalib_config:
-            datalib_path = datalib_config.get('database_path')
-            if datalib_path:
-                datalib_path = utils.format_path(datalib_path, self.path())
-        else:
-            # TODO: We need to fallback to this path because when using DCC client, configs are not available
-            datalib_path = path_utils.join_path(self.path(), 'data.db')
-
-        # if not datalib_path:
-        #     datalib_path = path_utils.join_path(path_utils.get_user_data_dir('dataLibrary'), 'data.db')
-
-        return path_utils.clean_path(datalib_path)
-
-    def library_window(self):
-        """
-        Returns library window this library is attached into
-        :return:
-        """
-
-        return self._library_window
-
-    def set_library_window(self, library_window):
-        """
-        Sets library window this library is attached to
-        :param library_window:
-        """
-
-        self._library_window = library_window
-
-    def is_dirty(self):
-        """
-        Returns whether the data has changed on disk or not
-        :return: bool
-        """
-
-        return not self._items or self._mtime != self._get_mtime()
-
-    def set_dirty(self, value):
-        """
-        Updates the model object with the current data timestamp
-        :param value: bool
-        """
-
-        if value:
-            self._mtime = None
-        else:
-            self._mtime = self._get_mtime()
-
-    def recursive_depth(self):
-        """
-        Return the recursive search depth
-        :return: int
-        """
-
-        recursive_steps = consts.DEFAULT_RECURSIVE_DEPTH
-        datalib_config = configs.get_library_config('tpDcc-libs-datalibrary')
-        if datalib_config:
-            recursive_steps = datalib_config.get('recursive_search_depth')
-
-        return recursive_steps
-
-    def item_class_from_data_type(self, data_type, **kwargs):
-        """
-        Returns data instance class from the given data type
-        :param data_type: str
-        :param kwargs:
-        :return: variant
-        """
-
-        package_name = kwargs.pop('package_name', None)
-        do_reload = kwargs.pop('do_reload', False)
-
-        for item_class in data.get_all_data_items(package_name=package_name, do_reload=do_reload):
-            if item_class.DATA_TYPE == data_type:
-                return item_class
-
-        return None
-
-    def item_from_path(self, path, **kwargs):
-        """
-        Returns a new data item instance from the given path
-        :param path: str
-        :param kwargs:
-        :return:
-        """
-
-        path = path_utils.clean_path(path)
-
-        data_type = kwargs.pop('data_type', None)
-        package_name = kwargs.pop('package_name', None)
-        do_reload = kwargs.pop('do_reload', False)
-
-        extension = None
-        if data_type:
-            for item_class in data.get_all_data_items(package_name=package_name, do_reload=do_reload):
-                if item_class.DATA_TYPE == data_type:
-                    extension = item_class.EXTENSION
-                    break
-        if extension and not path.endswith(extension):
-            path = '{}{}'.format(path, extension)
-
-        for item_class in data.get_all_data_items(package_name=package_name, do_reload=do_reload):
-            if item_class.match(path):
-                item = factory.ItemsFactory().create_item(item_class, path=path, data=dict(), library=self)
-                return item
-
-        return None
-
-    def items_from_paths(self, paths, **kwargs):
-        """
-        Returns new instances for the given paths
-        :param paths: list(str)
-        :param kwargs:
-        :return:
-        """
-
-        for path in paths:
-            item = self.item_from_path(path, **kwargs)
-            if item:
-                yield item
-
-    def items_from_urls(self, urls, **kwargs):
-        """
-        Returns new item instances for the given QUrl objects
-        :param urls: list(QUrl)
-        :param kwargs:
-        :return:
-        """
-
-        items = list()
-        for path in utils.paths_from_urls(urls):
-            item = self.item_from_path(path, **kwargs)
-            if item:
-                data = item.create_item_data()
-                item.set_item_data(data)
-            else:
-                LOGGER.warning('Cannot find the item for path "{}"'.format(path))
-
-        return items
-
-    def sync(self, progress_callback=lambda message, percent: None):
-        """
-        Sync the file sytem wit hthe library data
-        """
-
-        if not self.path():
-            LOGGER.warning('No path set for syncing data')
-            return
-
-        if progress_callback:
-            progress_callback('Syncing')
-
-        new_item_data = dict()
-        old_item_data = self._read()
-        items = list(self._walker(self.path()))
-        count = len(items)
-
-        for i, item in enumerate(items):
-            percent = (float(i + 1) / float(count))
-            if progress_callback:
-                percent *= 100
-                label = '{0:.0f}%'.format(percent)
-                progress_callback(label, percent)
-            path = item.get('path')
-            new_item_data[path] = old_item_data.get(path, dict())
-            new_item_data[path].update(item)
-
-        if progress_callback:
-            progress_callback('Post Callbacks')
-
-        self._post_sync(new_item_data)
-
-        if progress_callback:
-            progress_callback('Saving Cache')
-
-        self._save(new_item_data)
-
-        self.dataChanged.emit()
-
-    def clear(self):
-        """
-        Clears all the library data
-        """
-
-        self._items = list()
-        self._results = list()
-        self._grouped_results = list()
-        self.dataChanged.emit()
-
-    # =================================================================================================================
-    # CREATE
-    # =================================================================================================================
-
-    def create_folder(self, folder_name, folder_directory, sync=False):
-
-        data_folder_class = self.item_class_from_data_type(data_type='folder')
-        folder_path = path_utils.join_path(folder_directory, folder_name)
-        folder_item = self._factory.create_item(data_folder_class, folder_path, {}, self)
-        valid_save = folder_item.save(sync=sync)
-        if not valid_save:
-            return None
-
-        self.add_item(folder_item)
-
-        return folder_item
-
-    # =================================================================================================================
-    # SEARCH
-    # =================================================================================================================
-
-    def is_search_enabled(self):
-        """
-        Returns whether search functionality is enabled or not
-        :return: bool
-        """
-
-        return self._search_enabled
-
-    def set_search_enabled(self, flag):
-        """
-        Sets whether search functionality is enabled or not
-        :param flag: bool
-        """
-
-        self._search_enabled = flag
-
-    def search(self):
-        """
-        Run a search using the queries added to library data
-        """
-
-        if not self.is_search_enabled():
-            return
-
-        start_time = time.time()
-        LOGGER.debug('Searching items ...')
-        self.searchStarted.emit()
-        self._results = self.find_items(self.queries())
-        self._grouped_results = self.group_items(self._results, self.group_by())
-        self.searchFinished.emit()
-        self._search_time = time.time() - start_time
-        self.searchTimeFinished.emit()
-        LOGGER.debug('Search time: {}'.format(self._search_time))
-
-    def sort_by(self):
-        """
-        Return the list of fields to sorty by
-        :return: list(str)
-        """
-
-        return self._sort_by
-
-    def set_sort_by(self, fields):
-        """
-        Set the list of fields to group by
-        >>> set_sorty_by(['name:asc', 'type:asc'])
-        :param fields: list(str)
-        """
-
-        self._sort_by = fields
-
-    def group_by(self):
-        """
-        Return the list of fields to group by
-        :return: list(str)
-        """
-
-        return self._group_by
-
-    def set_group_by(self, fields):
-        """
-        Set the list of fields to group by
-        >>> set_group_by(['name:asc', 'type:asc'])
-        :param fields: list(str)
-        """
-
-        self._group_by = fields
-
-    def fields(self):
-        """
-        Returns all the fields for the library
-        :return: list(str)
-        """
-
-        return self.Fields
-
-    def field_names(self):
-        """
-        Returns all field names for the library
-        :return: list(str)
-        """
-
-        return [field['name'] for field in self.fields()]
-
-    def queries(self, exclude=None):
-        """
-        Return all queries for the data base excluding the given ones
-        :param exclude: list(str) or None
-        :return: list(dict)
-        """
-
-        queries = list()
-        exclude = exclude or list()
-
-        for query in self._queries.values():
-            if query.get('name') not in exclude:
-                queries.append(query)
-
-        return queries
-
-    def query_exists(self, name):
-        """
-        Check if the given query name exists
-        :param name: str
-        :return: bool
-        """
-
-        return name in self._queries
-
-    def add_global_query(self, query):
-        """
-        Add a global query to library
-        :param query: dict
-        """
-
-        self._global_queries[query['name']] = query
-
-    def add_query(self, query):
-        """
-        Add a search query to the library
-        >>> add_query({
-        >>>    'name': 'Test Query',
-        >>>    'operator': 'or',
-        >>>    'filters': [
-        >>>        ('folder', 'is', '/lib/proj/test'),
-        >>>        ('folder', 'startswith', '/lib/proj/test'),
-        >>>    ]
-        >>>})
-        :param query: dict
-        """
-
-        self._queries[query['name']] = query
-
-    def remove_query(self, name):
-        """
-        Remove the query with the given name
-        :param name: str
-        """
-
-        if name in self._queries:
-            del self._queries[name]
-
-    def distinct(self, field, queries=None, sort_by='name'):
-        """
-        Returns all values for the given field
-        :param field: str
-        :param queries: variant, None or list(dict)
-        :param sort_by: str
-        :return: list
-        """
-
-        results = dict()
-        queries = queries or list()
-        queries.extend(self._global_queries.values())
-
-        items = self.create_items() or list()
-        for item in items:
-            value = item.item_data().get(field)
-            if value:
-                results.setdefault(value, {'count': 0, 'name': value})
-                match = self.match(item.item_data(), queries)
-                if match:
-                    results[value]['count'] += 1
-
-        def sort_key(facet):
-            return facet.get(sort_by)
-
-        return sorted(list(results.values()), key=sort_key)
-
-    def registered_items(self):
-        """
-        Returns registered data items
-        :return: list(LibraryDataItem)
-        """
-
-        return data.get_all_data_items()
-
-    def create_items(self):
-        """
-        Create all teh items for the library model
-        :return: list(LibraryItem)
-        """
-
-        # TODO: Item creation should be managed outside of this class
-
-        if not self.is_dirty():
-            return self._items
-
-        self._items = list()
-        data_found = self._read()
-        modules_found = list()
-        for item_data in list(data_found.values()):
-            if '__class__' in item_data:
-                modules_found.append(item_data.get('__class__'))
-        modules_found = set(modules_found)
-
-        classes = dict()
-        for module in modules_found:
-            imported_module = modules.resolve_module(module, log_error=True)
-            if not imported_module:
-                LOGGER.warning('Impossible to import data library item: "{}"'.format(module))
-                continue
-            classes[module] = imported_module
-
-        for path in list(data_found.keys()):
-            module = data_found[path].get('__class__')
-            item_class = classes.get(module)
-            if item_class and self.item_is_supported_in_current_dcc(item_class):
-                # item_view = self._factory.create_view(item_class, path, data_found[path], self, self._library_window)
-                item = self._factory.create_item(item_class, path, data_found[path], self)
-                self._items.append(item)
-
-        return self._items
-
-    def item_is_supported_in_current_dcc(self, item):
-        """
-        Returns whether or not given item is supported in current DCC
-        :param item: class or DataItem instance
-        :return: bool
-        """
-
-        if not item.SUPPORTED_DCCS:
-            return True
-
-        current_dcc = dcc.client().get_name()
-        if current_dcc not in item.SUPPORTED_DCCS:
-            return False
-
-        return True
-
-    def add_item(self, item):
-        """
-        Add the given item to the library data
-        :param item: LibraryItem
-        """
-
-        self.save_item_data([item])
-
-    def add_items(self, items):
-        """
-        Add the given items to the library data
-        :param items: list(LibraryItem)
-        """
-
-        self.save_item_data(items)
-
-    def update_item(self, item):
-        """
-        Update the given item in the library data
-        :param item: LibraryItem
-        """
-
-        self.save_item_data([item])
-
-    def save_item_data(self, items, emit_data_changed=True):
-        """
-        Add the given items to the library data
-        :param items: list(LibraryItem)
-        :param emit_data_changed: bool
-        """
-
-        LOGGER.debug('Saving Items: {}'.format(items))
-
-        current_data = self._read()
-        for item in items:
-            path = item.path
-            item_data = item.data
-            current_data.setdefault(path, dict())
-            current_data[path].update(item_data)
-
-        self._save(current_data)
-
-        if emit_data_changed:
-            self.search()
-            self.dataChanged.emit()
-
-    def find_items(self, queries):
-        """
-        Get the items that match the given queries
-        :param queries: list(dict)
-        :return: list(LibraryItem)
-        """
-
-        fields = list()
-        results = list()
-
-        queries = copy.copy(queries)
-        queries.extend(self._global_queries.values())
-
-        items = self.create_items() or list()
-        for item in items:
-            match = self.match(item.data, queries)
-            if match:
-                results.append(item)
-            fields.extend(list(item.data.keys()))
-
-        self._fields = list(set(fields))
-
-        if self.sort_by():
-            results = self.sorted(results, self.sort_by())
-
-        return results
-
-    def find_items_views(self, queries):
-        """
-        Get the item views that match the given queries
-        :param queries: list(dict)
-        :return: list(LibraryItem)
-        """
-
-        items = self.find_items(queries)
-        if not items:
-            return items
-
-        item_views = list()
-        for item in items:
-            item_view = factory.ItemsFactory().create_view_from_item(item)
-            if not item_view:
-                continue
-            item_views.append(item_view)
-
-        return item_views
-
-    def results(self):
-        """
-        Return the items found after a search is executed
-        :return: list(LibraryItem)
-        """
-
-        return self._results
-
-    def grouped_results(self):
-        """
-        Return the results grouped after a search is executed
-        :return: dict
-        """
-
-        return self._grouped_results
-
-    def search_time(self):
-        """
-        Return the time taken to run a search
-        :return: float
-        """
-
-        return self._search_time
-
-    # =================================================================================================================
+    # ============================================================================================================
     # STATIC FUNCTIONS
-    # =================================================================================================================
+    # ============================================================================================================
 
     @staticmethod
     def match(data, queries):
@@ -812,9 +115,9 @@ class DataLibrary(QObject):
                 elif cond == 'not':
                     match = value != item_value
                 elif cond == 'startswith':
-                    match = item_value.startswith(value)
+                    match = str(item_value).startswith(value)
                 elif cond == 'endswith':
-                    match = item_value.endswith(value)
+                    match = str(item_value).endswith(value)
 
                 if operator == 'or' and match:
                     break
@@ -889,7 +192,20 @@ class DataLibrary(QObject):
             reverse = tokens[1] != 'asc'
 
         for item in items:
-            value = item.item_data().get(field)
+            if not item:
+                continue
+
+            # TODO: Maybe we should move this to a filter?
+            # Skip items that start with '.'
+            if item.name().startswith('.'):
+                continue
+            item_directory = item.data().get('directory', '')
+            if item_directory:
+                base_dir = os.path.basename(item_directory)
+                if not base_dir == '.' and base_dir.startswith('.'):
+                    continue
+
+            value = item.data().get(field)
             if value:
                 results_.setdefault(value, list())
                 results_[value].append(item)
@@ -904,153 +220,1747 @@ class DataLibrary(QObject):
 
         return results
 
-    # =================================================================================================================
-    # SETTINGS
-    # =================================================================================================================
+    # ============================================================================================================
+    # CLASS METHODS
+    # ============================================================================================================
 
-    def settings(self):
+    @classmethod
+    def default_plugin_paths(cls):
+
+        return [
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'plugins'),
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data'),
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'dccs', dcc.client().get_name(), 'plugins'),
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'dccs', dcc.client().get_name(), 'data')
+        ]
+
+    @classmethod
+    def create(cls, path, plugin_locations=None, load_data_plugins_from_settings=True):
+        if not path.endswith('db'):
+            path += '.db'
+
+        data_lib = cls(path, load_data_plugins_from_settings)
+        data_lib.init()
+
+        plugin_locations = python.force_list(plugin_locations)
+        plugin_locations.extend(cls.default_plugin_paths())
+        plugin_locations = list(set(plugin_locations))
+        for plugin_path in plugin_locations:
+            if not os.path.isdir(plugin_path):
+                continue
+            data_lib.register_plugin_path(plugin_path)
+
+        return data_lib
+
+    @classmethod
+    def load(cls, path, load_data_plugins_from_settings=True):
         """
-        Returns the stetins for the data
-        :return: dict
-        """
-
-        return {
-            'sortBy': self.sort_by(),
-            'groupBy': self.group_by()
-        }
-
-    def set_settings(self, settings):
-        """
-        Set the settings for the data
-        :param settings: dict
-        """
-
-        value = settings.get('sortBy')
-        if value is not None:
-            self.set_sort_by(value)
-        value = settings.get('groupBy')
-        if value is not None:
-            self.set_group_by(value)
-
-    # =================================================================================================================
-    # INTERNAL
-    # =================================================================================================================
-
-    def _get_mtime(self):
-        """
-        Internal function that returns when the data was last modified
-        :return: float or None
-        """
-
-        path = self.database_path()
-        mtime = None
-        if os.path.exists(path):
-            mtime = os.path.getmtime(path)
-
-        return mtime
-
-    def _is_valid_path(self, path):
-        """
-        Internal function taht returns whether or not given path should be ignored
-        :param path: str
-        :return: bool
+        Loads the given data base and returns DataLib instance
+        :param path: str, absolute path pointing to database file
+        :param load_data_plugins_from_settings: bool
+        :return: DataLib
         """
 
-        if not path:
-            return False
+        return cls(path, load_data_plugins_from_settings)
 
-        ignore_paths = list()
-        datalib_config = configs.get_library_config('tpDcc-libs-datalibrary')
-        if datalib_config:
-            ignore_paths = python.force_list(datalib_config.get('ignore_paths', default=ignore_paths))
+    # ============================================================================================================
+    # BASE
+    # ============================================================================================================
 
-        path = path_utils.clean_path(path)
-        for ignore_path in ignore_paths:
-            if path in path_utils.clean_path(ignore_path):
-                return False
+    def init(self):
+        """
+        Initializes and creates data source
+        """
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            self._execute(connection, 'create')
+
+        # Call it, to force the creation of the thumbs folder if it does not exists
+        self.get_thumbs_path()
+        self.get_versions_path()
+        self.get_metadata_path()
+        self.get_dependencies_path()
 
         return True
 
-    def _walker(self, path):
+    def get_identifier(self, identifier):
         """
-        Internal function that walks the given root path looking for valid items and returning the item data
-        :param path: str
+        Returns proper item identifier depending of the path type (absolute or relative)
+        :param identifier: str
+        :return: str
         """
 
-        path = path_utils.clean_path(path)
-        max_depth = self.recursive_depth()
-        start_depth = path.count(os.path.sep)
+        return path_utils.clean_path(self._get_relative_identifier(identifier) if self._relative_paths else identifier)
 
-        for root, dirs, files in os.walk(path, followlinks=True):
+    def format_identifier(self, identifier):
+        """
+        Internal function that returns identifier in the proper format
+        :param identifier: str
+        :return: str
+        """
 
-            files.extend(dirs)
+        if identifier.startswith('./'):
+            identifier = identifier[2:]
 
-            for file_name in files:
-                path = path_utils.join_path(root, file_name)
-                if not self._is_valid_path(path):
+        return path_utils.clean_path(
+            os.path.join(self.get_directory(), identifier)) if self._relative_paths else identifier
+
+    def get_uuid(self, identifier):
+        return shortuuid.uuid(self.get_identifier(identifier))
+
+    def get_all_uuids(self):
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'find_all_uuids')
+
+        return [result[0] for result in connection.results]
+
+    def get_directory(self):
+        """
+        Returns root path directory where data library is located
+        :return: str
+        """
+
+        return path_utils.clean_path(os.path.dirname(self._id))
+
+    def add(self, identifier):
+        """
+        Adds data identifier into data base
+        :param identifier: str, data identifier
+        """
+
+        identifier = self.get_identifier(identifier)
+        full_identifier = self.format_identifier(identifier)
+
+        field_names = self.field_names()
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+
+            for scan_plugin in self._scan_factory.plugins():
+                if not scan_plugin.can_represent(full_identifier):
                     continue
-                item = self.item_from_path(path)
-                remove = False
-                if item:
-                    yield item.create_item_data()
-                    if not item.ENABLE_NESTED_ITEMS:
-                        remove = True
-                if remove and file_name in dirs:
-                    dirs.remove(file_name)
 
-            if max_depth == 1:
+                field_values = list()
+                scanned_fields = scan_plugin.fields(full_identifier)
+                self._update_fields(full_identifier, scanned_fields)
+                for field_name in field_names:
+                    field_values.append('' if field_name not in scanned_fields else scanned_fields[field_name])
+                field_values = ','.join(
+                    "'{}'".format(field) if python.is_string(field) else str(field) for field in field_values)
+                self._execute(
+                    connection, 'add_with_fields', replacements={
+                        '$(IDENTIFIER)': identifier,
+                        '$(FIELDS)': ','.join(field_names), '$(FIELDS_VALUES)': field_values})
+
+    # with sqlite.ConnectionContext(self._id, commit=True) as connection:
+    #         self._execute(connection, 'add', replacements={'$(IDENTIFIER)': identifier})
+
+    def rename(self, identifier, new_identifier):
+        """
+        Renames data
+        :param identifier: str
+        :param new_identifier: str
+        :return:
+        """
+
+        identifier = self.get_identifier(identifier)
+        new_identifier = self.get_identifier(new_identifier)
+
+        current_uuid = self.find_uuid(identifier)
+        if not current_uuid:
+            return
+
+        new_uuid = self.get_uuid(new_identifier)
+        new_name = os.path.splitext(os.path.basename(new_identifier))[0]
+
+        ctime = str(time.time()).split('.')[0]
+        user = getpass.getuser()
+        if user and python.is_python2():
+            user.decode(locale.getpreferredencoding())
+        modified = timedate.get_date_and_time()
+
+        current_dependencies = self.get_dependencies(identifier, as_uuid=True)
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            self._execute(connection, 'rename', replacements={
+                '$(IDENTIFIER)': identifier, '$(NEW_IDENTIFIER)': new_identifier, '$(NEW_UUID)': new_uuid,
+                '$(NEW_NAME)': new_name,  '$(USER)': user,  '$(MODIFIED)': modified,  '$(CTIME)': ctime})
+
+        self.rename_metadata(current_uuid, new_uuid)
+        self.rename_thumb(current_uuid, new_uuid)
+        self.rename_version(current_uuid, new_uuid)
+        self.rename_dependency(current_uuid, new_uuid, current_dependencies)
+
+        self.dataChanged.emit()
+
+    def move(self, identifier, new_identifier):
+        """
+        Moves data
+        :param identifier: str
+        :param new_identifier: str
+        :return:
+        """
+
+        identifier = self.get_identifier(identifier)
+        new_identifier = self.get_identifier(new_identifier)
+
+        current_uuid = self.find_uuid(identifier)
+        if not current_uuid:
+            return
+
+        new_uuid = self.get_uuid(new_identifier)
+        new_directory = self.get_identifier(os.path.dirname(new_identifier))
+
+        ctime = str(time.time()).split('.')[0]
+        user = getpass.getuser()
+        if user and python.is_python2():
+            user.decode(locale.getpreferredencoding())
+        modified = timedate.get_date_and_time()
+
+        current_dependencies = self.get_dependencies(identifier, as_uuid=True)
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            self._execute(connection, 'move', replacements={
+                '$(IDENTIFIER)': identifier, '$(NEW_IDENTIFIER)': new_identifier, '$(NEW_UUID)': new_uuid,
+                '$(NEW_DIRECTORY)': new_directory, '$(USER)': user, '$(MODIFIED)': modified, '$(CTIME)': ctime})
+
+        self.rename_metadata(current_uuid, new_uuid)
+        self.rename_thumb(current_uuid, new_uuid)
+        self.rename_version(current_uuid, new_uuid)
+        self.rename_dependency(current_uuid, new_uuid, current_dependencies)
+
+    def remove(self, identifier, recursive=True):
+        """
+        Removes data from data base
+        :param identifier: str, dta identifier
+        """
+
+        identifier = self.get_identifier(identifier)
+        uuid = self.find_uuid(identifier)
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            self._execute(connection, 'remove', replacements={'$(IDENTIFIER)': identifier})
+        self.dataChanged.emit()
+
+        if uuid:
+            self.delete_metadata(uuid)
+            self.delete_thumb(uuid)
+            self.delete_version(uuid)
+            self.delete_dependencies(uuid, recursive=recursive)
+
+    def skip_regexes(self):
+        """
+        Returns a list of regular expression strings stored withing the data base
+        :return: list(str)
+        """
+
+        return self.settings().get('skip_regex', list())
+
+    def add_skip_regex(self, pattern):
+        """
+        Stores givfen regex pattern into the data base. When a scan is initiated this regex will be picked up and omit
+        locations containing this pattern
+        :param pattern: str, string regex
+        """
+
+        settings = self.settings()
+        key = 'skip_regex'
+        settings[key] = settings.get(key, list()) + [self._clean_path(pattern)]
+
+        self.save_settings(settings)
+
+    def remove_skip_regex(self, pattern):
+        """
+        Removes given regex string pattern from the data base
+        :param pattern: str, string regex
+        """
+
+        settings = self.settings()
+        key = 'skip_regex'
+        current_settings = settings.get(key, list())
+        current_settings.remove(self._clean_path(pattern))
+        settings[key] = current_settings
+        self.save_settings(settings)
+
+    def get(self, identifier, only_extension=False):
+        """
+        Returns a composite binding of a DataPart plugin, bringing together all the plugins which can viably
+        represent this data
+        :param identifier: data identifier to be passed to the DataPart
+        :param only_extension: If True, only extensions will be checked during data composition
+        :return: DataPart composite
+        """
+
+        template = None
+
+        identifier = self.format_identifier(identifier)
+
+        dcc_name = dcc.client().get_name()
+
+        for data_plugin in self._data_plugins:
+
+            if data_plugin.can_represent(identifier, only_extension=only_extension):
+
+                # Skip data that are not supported in current DCC
+                supported_dccs = data_plugin.supported_dccs()
+                if supported_dccs:
+                    if dcc_name not in supported_dccs:
+                        break
+
+                proper_identifier = self.get_identifier(identifier)
+                template = template or datapart.DataPart(proper_identifier, db=self)
+                template.bind(data_plugin(proper_identifier, self))
+
+        if not template:
+            return None
+
+        LOGGER.debug('Compounded {} to {}'.format(identifier, template))
+
+        return template
+
+    def get_all_items(self):
+        """
+        Returns all items in the data base
+        :return: list(DataPart)
+        """
+
+        identifiers = self.find(None) or list()
+        for identifier in identifiers:
+            item = self.get(identifier)
+            if not item:
+                continue
+            yield item
+
+    def get_all_data_plugins(self, package_name=None):
+        """
+        Returns all data plugins available int the library
+        :return:
+        """
+
+        dcc_name = dcc.client().get_name()
+
+        valid_plugins = list()
+        all_plugins = self._data_factory.plugins(package_name=package_name)
+        for plugin in all_plugins:
+            supported_dccs = plugin.supported_dccs()
+            if supported_dccs and dcc_name not in supported_dccs:
+                continue
+            valid_plugins.append(plugin)
+
+        return valid_plugins
+
+    def explore(self, location):
+        """
+        Returns the above and below locations for the given one
+        :param location: str, location path
+        :return: list(str), list(str)
+        """
+
+        for plugin in self._scan_factory.plugins():
+            if plugin.can_represent(location):
+                return plugin.above(location), plugin.below(location)
+
+    def sync(self, locations=None, recursive=True, full=True, progress_callback=lambda message, percent: None):
+        """
+        This function cycles over all the search locations stored in the data base and attempts to populate it with
+        data data if that data has been changed or is new
+        :param locations: list(str)
+        :param recursive: bool
+        :param full: bool
+        """
+
+        skip_regex = None
+        patterns = self.skip_regexes()
+        if patterns:
+            skip_regex = re.compile('(' + ')|('.join(patterns) + ')')
+
+        locations = python.force_list(locations or self.scan_locations())
+
+        if progress_callback:
+            progress_callback('Syncing', 0)
+
+        LOGGER.debug('Starting Sync : {}'.format(locations))
+
+        scanned_identifiers = list()
+
+        field_names = self.field_names()
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            for location in locations:
+                for scan_plugin in self._scan_factory.plugins():
+                    if not scan_plugin.can_represent(location):
+                        continue
+                    for identifier in scan_plugin.identifiers(location, skip_regex, recursive=recursive):
+
+                        if identifier == location:
+                            continue
+
+                        field_values = list()
+                        relative_identifier = self._get_relative_identifier(identifier)
+                        scanned_fields = scan_plugin.fields(identifier)
+                        self._update_fields(identifier, scanned_fields)
+                        for field_name in field_names:
+                            field_values.append('' if field_name not in scanned_fields else scanned_fields[field_name])
+                        field_values = ','.join("'{}'".format(field) for field in field_values)
+                        self._execute(
+                            connection, 'add_with_fields', replacements={
+                                '$(IDENTIFIER)': relative_identifier if self._relative_paths else identifier,
+                                '$(FIELDS)': ','.join(field_names), '$(FIELDS_VALUES)': field_values})
+                        self.scanned.emit(relative_identifier if self._relative_paths else identifier)
+                        scanned_identifiers.append(relative_identifier if self._relative_paths else identifier)
+
+        if full:
+            self.sync_tags(identifiers=scanned_identifiers)
+            self.sync_versions(identifiers=scanned_identifiers)
+            self.sync_metadata(identifiers=scanned_identifiers)
+            self.sync_thumbs(identifiers=scanned_identifiers)
+            self.sync_dependencies(identifiers=scanned_identifiers)
+
+            self.clean_invalid_identifiers()
+
+
+        if progress_callback:
+            progress_callback('Post Callbacks', 100)
+
+        self._post_sync()
+
+        self.syncCompleted.emit()
+        self.dataChanged.emit()
+
+        end_msg = 'Sync Completed : {}'.format(locations)
+        if progress_callback:
+            progress_callback(end_msg, 100)
+        LOGGER.debug(end_msg)
+
+        return scanned_identifiers
+
+    def clean_invalid_identifiers(self):
+        for identifier in self.find(None):
+            for scan_plugin in self._scan_factory.plugins():
+                if scan_plugin.check(self.format_identifier(identifier)) == scan_plugin.ScanStatus.NOT_VALID:
+                    self.remove(identifier)
+                    break
+
+    def clear(self):
+        """
+        Clears all the library data
+        """
+
+        self._resulst = list()
+        self._grouped_results = list()
+        self.dataChanged.emit()
+
+    def cleanup(self):
+        self.clean_versions()
+        self.clean_thumbnails()
+        self.clean_metadata()
+        self.clean_dependencies()
+
+    # ============================================================================================================
+    # PATHS
+    # ============================================================================================================
+
+    def plugin_locations(self):
+        """
+        Returns all the places this data library is currently loading plugins from
+        :return: list(str)
+        """
+
+        return self.settings().get('plugin_locations', list()) or list()
+
+    def register_data_class(self, data_class, package_name=None):
+        """
+        Registers given data class
+        :param package_name: str
+        :param data_class: DataPart class
+        """
+
+        valid = self._data_factory.register_plugin_from_class(data_class, package_name=package_name)
+        if valid:
+            self._sort_data_plugins()
+
+    def register_plugin_path(self, location, package_name=None):
+        """
+        Adds the given location to the list of locations being searched for when looking for plugins. This data is
+        persistent between sessions and will invoke a reload of plugins
+        :param location: str, plugins directory to add
+        :param package_name: str
+        """
+
+        settings = self.settings()
+
+        key = 'plugin_locations'
+        settings[key] = settings.get(key, list()) + [self._clean_path(location)]
+        self.save_settings(settings)
+
+        self._scan_factory.register_path(location, package_name=package_name)
+        self._data_factory.register_path(location, package_name=package_name)
+
+        self._sort_data_plugins()
+
+    def remove_plugin_path(self, location):
+        """
+        Removes a plugin location for them plugin location list and triggers a sync for plugins
+        :param location: str, plugins location to remove
+        """
+
+        settings = self.settings()
+        key = 'plugin_locations'
+        current_settings = settings.get(key, list())
+        current_settings.remove(self._clean_path(location))
+        settings[key] = current_settings
+        self.save_settings(settings)
+
+        # Update factories
+        self._scan_factory.unregister_path(location)
+        self._data_factory.unregister_path(location)
+
+        self._sort_data_plugins()
+
+    def scan_locations(self):
+        """
+        Returns a list of all scan locations within the data base that we want to add to data base
+        :return: list(str)
+        """
+
+        return self.settings().get('scan_locations', list())
+
+    def add_scan_location(self, location, sync=False):
+        """
+        Adds given directory to the data base. When a new data base sync process is executed, this location
+        will be picked up
+        :param location: str, path where data is located
+        :param sync: bool, If True, a sync operation will be executed after adding the new location
+        """
+
+        location = self._clean_path(location)
+        settings = self.settings()
+        key = 'scan_locations'
+        current_locations = settings.get(key, list())
+        if location in current_locations:
+            return
+        settings[key] = current_locations + [location]
+        self.save_settings(settings)
+
+        if sync:
+            self.sync()
+
+    def remove_scan_location(self, location, sync=False):
+        """
+        Removes the given location from the list of locations to scan data from in the data base
+        :param location: str, path where data is located that we want to remove from data base
+        :param sync: bool, If True, a sync operation will be executed after adding the new location
+        """
+
+        settings = self.settings()
+        key = 'scan_locations'
+        current_settings = settings.get(key, list())
+        current_settings.remove(self._clean_path(location))
+        settings[key] = current_settings
+        self.save_settings(settings)
+
+        if sync:
+            self.sync()
+
+    # ============================================================================================================
+    # TAGS
+    # ============================================================================================================
+
+    def sync_tags(self, identifiers):
+
+        all_tags = list()
+        mapped_tags = dict()
+
+        for identifier in identifiers:
+            data = self.get(identifier)
+            if not data:
+                continue
+
+            # Get tags for this data
+            expected_tags = data.mandatory_tags()
+            all_tags.extend(expected_tags)
+            mapped_tags[identifier] = expected_tags
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            for tag in set(all_tags):
+                self._execute(connection, 'tag_insert', replacements={'$(TAG)': tag})
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            for identifier in identifiers:
+                for tag in mapped_tags.get(identifier, list()):
+                    try:
+                        self._execute(connection, 'tag_connect',
+                                      replacements={'$(IDENTIFIER)': identifier, '$(TAG)': tag})
+                    except sqlite3.IntegrityError:
+                        pass
+
+    def tag(self, identifier, tags):
+        """
+        Assigns given tags to the data with the given identifier
+        :param identifier: str, data identifier
+        :param tags: str or list(str), tag or list of tags to assign to given data identifier
+        """
+
+        tags = python.force_list(tags)
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            for tag in tags:
+                self._execute(connection, 'tags_add', replacements={'$(IDENTIFIER)': identifier, '$(TAG)': tag.lower()})
+
+    def untag(self, identifier, tags):
+        """
+        Removes the given tags from the data with the given identifier
+        :param identifier: str, data identifier
+        :param tags: str or list(str), tag or list of tags to unassign to given data identifier
+        :return:
+        """
+
+        tags = python.force_list(tags)
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            for tag in tags:
+                self._execute(
+                    connection, 'tags_remove', replacements={'$(IDENTIFIER)': identifier, '$(TAG)': tag.lower()})
+
+    def tags(self, identifier):
+        """
+        Returns a list of all the tags which are assigned to the given identifier
+        :param identifier: str, data identifier
+        :return: list(str)
+        """
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'tags_get', replacements={'$(IDENTIFIER)': identifier})
+
+        return [str(result[0]) for result in connection.results]
+
+    # ============================================================================================================
+    # VERSIONS
+    # ============================================================================================================
+
+    def sync_versions(self, identifiers):
+
+        all_versions = dict()
+
+        identifiers = python.force_list(identifiers)
+
+        versions_path = self.get_versions_path()
+        if not versions_path or not os.path.isdir(versions_path):
+            LOGGER.warning(
+                'Impossible to sync versions because versions directory was not found: "{}"'.format(versions_path))
+            return
+
+        for identifier in identifiers:
+            identifier = self.get_identifier(identifier)
+            version_path = self.get_version_path(identifier)
+            if not version_path or not os.path.isdir(version_path):
+                continue
+
+            # name = self.find_data(identifier).get(identifier, dict()).get('name')
+            version_folder_name = os.path.basename(version_path)
+            version_file = version.VersionFile(versions_path)
+            version_file.set_version_folder_name(version_folder_name)
+            # version_file.set_version_name(name)
+            has_versions = version_file.has_versions()
+            if not has_versions:
+                continue
+            versions = version_file.get_versions()
+            if not versions:
+                continue
+            version_list = list()
+            for version_number, version_file_name in versions.items():
+                comment, user = version_file.get_version_data(version_number)
+                version_list.append({
+                    'uuid': version_folder_name, 'version_number': version_number,
+                    'name': version_file_name, 'comment': comment, 'user': user})
+            if not version_list:
+                continue
+            all_versions.setdefault(identifier, version_list)
+
+        if not all_versions:
+            return
+
+        for identifier, versions in all_versions.items():
+            for version_data in versions:
+                self.add_version(**version_data)
+
+    def get_versions_path(self):
+        """
+        Returns path where versions are stored
+        :return: str
+        """
+
+        versions_path = self.settings().get('versions_path')
+        if not versions_path:
+            versions_path = path_utils.join_path(self.get_directory(), '.versions')
+            self.update_settings({'versions_path': versions_path})
+        if not os.path.isdir(versions_path):
+            os.makedirs(versions_path)
+
+        return versions_path
+
+    def get_version_path(self, identifier):
+        """
+        Returns version path for the given identifier
+        :param identifier: str
+        :return: str
+        """
+
+        identifier = self.get_identifier(identifier)
+
+        item_id = self.find_uuid(identifier)
+        if not item_id:
+            return None
+
+        return path_utils.join_path(self.get_versions_path(), item_id)
+
+    def add_version(self, uuid, version_number, name, comment, user):
+        """
+        Assigns given tags to the data with the given identifier
+        :param uuid: str, data identifier
+        """
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+                self._execute(connection, 'version_add', replacements={
+                    '$(UUID)': uuid, '$(VERSION)': str(version_number),
+                    '$(NAME)': str(name), '$(COMMENT)': str(comment), '$(USER)': str(user)})
+
+    def get_versions(self, identifier):
+        """
+        Returns all versions of the given data
+        :param identifier: str
+        :return: list
+        """
+
+        identifier = self.get_identifier(identifier)
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'versions_get', replacements={'$(IDENTIFIER)': identifier})
+
+        return connection.results
+
+    def get_latest_version(self, identifier):
+        """
+        Returns last version data of the given data
+        :param identifier: str
+        :return:
+        """
+
+        identifier = self.get_identifier(identifier)
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'version_last_get', replacements={'$(IDENTIFIER)': identifier})
+
+        results = connection.results
+        if not results:
+            return None
+
+        return results[0][0]
+
+    def rename_version(self, uuid, new_uuid):
+
+        versions_path = self.get_versions_path()
+        if not versions_path or not os.path.isdir(versions_path):
+            return
+
+        version_folders = folder_utils.get_folders(versions_path)
+        for version_folder in version_folders:
+            if version_folder == uuid:
+                folder_utils.rename_folder(path_utils.join_path(versions_path, version_folder), new_uuid)
                 break
 
-            current_depth = root.count(os.path.sep)
-            if (current_depth - start_depth) >= max_depth:
-                del dirs[:]
+    def delete_version(self, uuid):
+        versions_path = self.get_versions_path()
+        if not versions_path or not os.path.isdir(versions_path):
+            return
 
-    def _post_sync(self, item_data):
+        version_folders = folder_utils.get_folders(versions_path)
+        for version_folder in version_folders:
+            if version_folder == uuid:
+                folder_utils.delete_folder(path_utils.join_path(versions_path, version_folder))
+
+    def clean_versions(self):
+        versions_path = self.get_versions_path()
+        if not versions_path or not os.path.isdir(versions_path):
+            return
+
+        all_uuids = self.get_all_uuids()
+        version_folders = folder_utils.get_folders(versions_path)
+        for version_folder in version_folders:
+            if version_folder not in all_uuids:
+                folder_utils.delete_folder(path_utils.join_path(versions_path, version_folder))
+
+    # ============================================================================================================
+    # THUMBS
+    # ============================================================================================================
+
+    def sync_thumbs(self, identifiers):
+
+        all_thumbs = list()
+
+        identifiers = python.force_list(identifiers)
+
+        thumbs_path = self.get_thumbs_path()
+        if not thumbs_path or not os.path.isdir(thumbs_path):
+            LOGGER.warning(
+                'Impossible to sync thumbs because thumbs directory was not found: "{}"'.format(thumbs_path))
+            return
+
+        for identifier in identifiers:
+            identifier = self.get_identifier(identifier)
+            uuid = self.get_uuid(identifier)
+            files = fileio.get_files(thumbs_path, uuid)
+            if not files:
+                continue
+            for thumb_file in files:
+                thumb_file_path = path_utils.join_path(thumbs_path, thumb_file)
+                if not thumb_file_path or not os.path.isfile(thumb_file_path):
+                    continue
+                all_thumbs.append({'identifier': identifier, 'thumb_name': thumb_file})
+
+        if not all_thumbs:
+            return
+
+        for thumb in all_thumbs:
+            self.set_thumb(**thumb)
+
+    def get_thumbs_path(self):
+        """
+        Returns path where thumbnails are stored
+        :return: str
+        """
+
+        thumbs_path = self.settings().get('thumbs_path')
+        if not thumbs_path:
+            thumbs_path = path_utils.join_path(self.get_directory(), '.thumbs')
+            self.update_settings({'thumbs_path': thumbs_path})
+        if not os.path.isdir(thumbs_path):
+            os.makedirs(thumbs_path)
+
+        return thumbs_path
+
+    def get_thumb(self, identifier):
+
+        identifier = self.get_identifier(identifier)
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'thumb_get', replacements={'$(IDENTIFIER)': identifier})
+
+        results = connection.results
+        if not results:
+            return None
+
+        return results[0][0]
+
+    def set_thumb(self, identifier, thumb_name):
+
+        identifier = self.get_identifier(identifier)
+
+        uuid = self.find_uuid(identifier)
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            self._execute(connection, 'thumb_set', replacements={'$(UUID)': uuid, '$(THUMB)': thumb_name})
+
+    def rename_thumb(self, uuid, new_uuid):
+        thumbs_path = self.get_thumbs_path()
+        if not thumbs_path or not os.path.isdir(thumbs_path):
+            return
+
+        thumb_files = fileio.get_files(thumbs_path)
+        for thumb_file in thumb_files:
+            thumb_name = os.path.splitext(thumb_file)[0]
+            if thumb_name == uuid:
+                thumb_extension = os.path.splitext(thumb_file)[-1]
+                new_thumb_name = '{}{}'.format(new_uuid, thumb_extension)
+                fileio.rename_file(thumb_file, thumbs_path, new_thumb_name)
+                with sqlite.ConnectionContext(self._id, commit=True) as connection:
+                    self._execute(connection, 'thumb_set', replacements={'$(UUID)': new_uuid, '$(THUMB)': new_thumb_name})
+                break
+
+    def delete_thumb(self, uuid):
+        thumbs_path = self.get_thumbs_path()
+        if not thumbs_path or not os.path.isdir(thumbs_path):
+            return
+
+        thumb_files = fileio.get_files(thumbs_path)
+        for thumb_file in thumb_files:
+            thumb_name = os.path.splitext(thumb_file)[0]
+            if thumb_name == uuid:
+                fileio.delete_file(path_utils.join_path(thumbs_path, thumb_file))
+                break
+
+    def clean_thumbnails(self):
+        thumbs_path = self.get_thumbs_path()
+        if not thumbs_path or not os.path.isdir(thumbs_path):
+            return
+
+        all_uuids = self.get_all_uuids()
+        thumb_files = fileio.get_files(thumbs_path)
+        for thumb_file in thumb_files:
+            thumb_name = os.path.splitext(thumb_file)[0]
+            if thumb_name not in all_uuids:
+                fileio.delete_file(path_utils.join_path(thumbs_path, thumb_file))
+
+    # ============================================================================================================
+    # METADATA
+    # ============================================================================================================
+
+    def sync_metadata(self, identifiers):
+
+        all_metadata = list()
+
+        identifiers = python.force_list(identifiers)
+
+        metadata_path = self.get_metadata_path()
+        if not metadata_path or not os.path.isdir(metadata_path):
+            LOGGER.warning(
+                'Impossible to sync metadata because metadata directory was not found: "{}"'.format(metadata_path))
+            return
+
+        for identifier in identifiers:
+            identifier = self.get_identifier(identifier)
+            uuid = self.get_uuid(identifier)
+            files = fileio.get_files(metadata_path, uuid)
+            if not files:
+                continue
+            for metadata_file in files:
+                metadata_file_path = path_utils.join_path(metadata_path, metadata_file)
+                if not metadata_file_path or not os.path.isfile(metadata_file_path):
+                    continue
+                split_file = metadata_file.split('.')
+                version = split_file[-2]
+                metadata = dict()
+                try:
+                    metadata = jsonio.read_file(metadata_file_path)
+                except Exception:
+                    pass
+
+                all_metadata.append({'identifier': identifier, 'version': version, 'metadata_dict': metadata})
+
+        if not all_metadata:
+            return
+
+        for metadata in all_metadata:
+            self.set_metadata(**metadata)
+
+    def get_metadata_path(self):
+        """
+        Returns path were metadata are stored
+        :return: str
+        """
+
+        metadata_path = self.settings().get('metadata_path')
+        if not metadata_path:
+            metadata_path = path_utils.join_path(self.get_directory(), '.meta')
+            self.update_settings({'metadata_path': metadata_path})
+        if not os.path.isdir(metadata_path):
+            os.makedirs(metadata_path)
+
+        return metadata_path
+
+    def get_metadata(self, identifier, version=None):
+        """
+        Returns item metadata
+        :param identifier: str
+        :param version: int
+        :return:
+        """
+
+        identifier = self.get_identifier(identifier)
+
+        metadata_version = version if version is not None else self.get_latest_version(identifier)
+        if metadata_version is None:
+            LOGGER.warning('Impossible to retrieve metadata because no version found for "{}"'.format(identifier))
+            return dict()
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(
+                connection, 'metadata_get',
+                replacements={'$(IDENTIFIER)': identifier, '$(VERSION)': metadata_version})
+
+        result = connection.results
+        if not result:
+            return dict()
+
+        result_dict = dict()
+        result_str = result[0][0]
+        try:
+            result_dict = json.loads(str(result_str).replace("\'", "\""))
+        except Exception as exc:
+            LOGGER.warning('Error while parsing file "{}" metadata: "{}"'.format(identifier, exc))
+
+        return result_dict
+
+    def set_metadata(self, identifier, version, metadata_dict):
+        """
+        Sets item metadata
+        :param identifier: str
+        :param metadata_dict: dict
+        """
+
+        identifier = self.get_identifier(identifier)
+
+        uuid = self.find_uuid(identifier)
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            self._execute(
+                connection, 'metadata_set',
+                replacements={'$(UUID)': uuid, '$(VERSION)': version, '$(METADATA)': metadata_dict})
+
+    def rename_metadata(self, uuid, new_uuid):
+        metadata_path = self.get_metadata_path()
+        if not metadata_path or not os.path.isdir(metadata_path):
+            return
+
+        meta_files = fileio.get_files(metadata_path)
+        for meta_file in meta_files:
+            meta_name = os.path.splitext(meta_file)[0].split('.')[0]
+            if meta_name == uuid:
+                meta_extension = os.path.splitext(meta_file)[-1]
+                new_meta_name = '{}{}'.format(new_uuid, meta_extension)
+                fileio.rename_file(meta_file, metadata_path, new_meta_name)
+                break
+
+    def delete_metadata(self, uuid):
+        metadata_path = self.get_metadata_path()
+        if not metadata_path or not os.path.isdir(metadata_path):
+            return
+
+        meta_files = fileio.get_files(metadata_path)
+        for meta_file in meta_files:
+            meta_name = os.path.splitext(meta_file)[0].split('.')[0]
+            if meta_name == uuid:
+                fileio.delete_file(path_utils.join_path(metadata_path, meta_file))
+                break
+
+    def clean_metadata(self):
+        metadata_path = self.get_metadata_path()
+        if not metadata_path or not os.path.isdir(metadata_path):
+            return
+
+        all_uuids = self.get_all_uuids()
+        meta_files = fileio.get_files(metadata_path)
+        for meta_file in meta_files:
+            meta_name = os.path.splitext(meta_file)[0].split('.')[0]
+            if meta_name not in all_uuids:
+                fileio.delete_file(path_utils.join_path(metadata_path, meta_file))
+
+    # ============================================================================================================
+    # DEPENDENCIES
+    # ============================================================================================================
+
+    def sync_dependencies(self, identifiers):
+
+        all_dependencies = list()
+
+        identifiers = python.force_list(identifiers)
+
+        dependencies_path = self.get_dependencies_path()
+        if not dependencies_path or not os.path.isdir(dependencies_path):
+            LOGGER.warning(
+                'Impossible to sync dependencies because dependencies directory was not found: "{}"'.format(
+                    dependencies_path))
+            return
+
+        for identifier in identifiers:
+            identifier = self.get_identifier(identifier)
+            uuid = self.get_uuid(identifier)
+            files = fileio.get_files(dependencies_path, uuid)
+            if not files:
+                continue
+            for dependency_file in files:
+                dependency_file_path = path_utils.join_path(dependencies_path, dependency_file)
+                if not dependency_file_path or not os.path.isfile(dependency_file_path):
+                    continue
+                dependency_data = dict()
+                try:
+                    dependency_data = jsonio.read_file(dependency_file_path)
+                except Exception:
+                    pass
+                if not dependency_data:
+                    continue
+
+                for dependency_uuid, dependency_name in dependency_data.items():
+                    dependency_identifier = self.find_identifier_from_uuid(dependency_uuid)
+                    if not dependency_identifier:
+                        continue
+                    all_dependencies.append(
+                        {'root_identifier': identifier, 'dependency_identifier': dependency_identifier,
+                         'name': dependency_name})
+
+        if not all_dependencies:
+            return
+
+        for dependency in all_dependencies:
+            self.add_dependency(**dependency)
+
+    def get_dependencies_path(self):
+        """
+        Returns path were dependencies links are stored
+        :return: str
+        """
+
+        dependencies_path = self.settings().get('dependencies_path')
+        if not dependencies_path:
+            dependencies_path = path_utils.join_path(self.get_directory(), '.dependencies')
+            self.update_settings({'dependencies_path': dependencies_path})
+        if not os.path.isdir(dependencies_path):
+            os.makedirs(dependencies_path)
+
+        return dependencies_path
+
+    def add_dependency(self, root_identifier, dependency_identifier, name):
+        """
+        Assigns given tags to the data with the given identifier
+        :param root_identifier: str, data identifier
+        :param dependency_identifier: str, data identifier
+        :param name: str, data identifier
+        """
+
+        root_identifier = self.get_identifier(root_identifier)
+        dependency_identifier = self.get_identifier(dependency_identifier)
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+                self._execute(connection, 'dependency_add', replacements={
+                    '$(ROOT_IDENTIFIER)': root_identifier, '$(DEPENDENCY_IDENTIFIER)': dependency_identifier,
+                    '$(NAME)': name})
+
+    def get_dependencies(self, identifier, as_uuid=False):
+
+        identifier = self.get_identifier(identifier)
+
+        if as_uuid:
+            with sqlite.ConnectionContext(self._id, get=True) as connection:
+                self._execute(connection, 'dependencies_uuid_get', replacements={'$(IDENTIFIER)': identifier})
+        else:
+            with sqlite.ConnectionContext(self._id, get=True) as connection:
+                self._execute(connection, 'dependencies_get', replacements={'$(IDENTIFIER)': identifier})
+
+        result_dict = dict()
+        result = connection.results
+        if not result:
+            return result_dict
+
+        for result in connection.results:
+            result_dict[result[0]] = result[1]
+
+        return result_dict
+
+    def rename_dependency(self, uuid, new_uuid, current_dependencies):
+
+        dependencies_path = self.get_dependencies_path()
+        if not dependencies_path or not os.path.isdir(dependencies_path):
+            return
+
+        dependencies_files = fileio.get_files(dependencies_path)
+        for dependency_file in dependencies_files:
+            dependency_name = os.path.splitext(dependency_file)[0].split('.')[0]
+            if dependency_name == uuid:
+                dependency_extension = os.path.splitext(dependency_file)[-1]
+                new_dependency_name = '{}{}'.format(new_uuid, dependency_extension)
+                fileio.rename_file(dependency_file, dependencies_path, new_dependency_name)
+                break
+
+        for dependency_file in dependencies_files:
+            dependency_name = os.path.splitext(dependency_file)[0].split('.')[0]
+            if dependency_name in current_dependencies:
+                dependency_file_path = path_utils.join_path(dependencies_path, dependency_file)
+                if not os.path.isfile(dependency_file_path):
+                    continue
+                dependency_data = jsonio.read_file(dependency_file_path)
+                if not dependency_data or uuid not in dependency_data:
+                    continue
+                dependency_data[new_uuid] = dependency_data[uuid]
+                dependency_data.pop(uuid)
+                jsonio.write_to_file(dependency_data, dependency_file_path)
+
+    def delete_dependencies(self, uuid, recursive=True):
+        dependencies_path = self.get_dependencies_path()
+        if not dependencies_path or not os.path.isdir(dependencies_path):
+            return
+
+        dependencies_data = None
+        dependencies_files = fileio.get_files(dependencies_path)
+        for dependency_file in dependencies_files:
+            dependency_name = os.path.splitext(dependency_file)[0].split('.')[0]
+            if dependency_name == uuid:
+                dependency_file_path = path_utils.join_path(dependencies_path, dependency_file)
+                dependencies_data = jsonio.read_file(dependency_file_path)
+                fileio.delete_file(dependency_file_path)
+                break
+
+        dependencies_files = fileio.get_files(dependencies_path)
+        for dependency_file in dependencies_files:
+            dependency_file_path = path_utils.join_path(dependencies_path, dependency_file)
+            if not os.path.isfile(dependency_file_path):
+                continue
+            dependency_data = jsonio.read_file(dependency_file_path)
+            if not dependency_data:
+                continue
+            modified = False
+            for dependency_uuid in dependency_data.copy():
+                if dependency_uuid == uuid:
+                    dependency_data.pop(dependency_uuid)
+                    modified = True
+            if modified:
+                jsonio.write_to_file(dependency_data, dependency_file_path)
+
+        if recursive and dependencies_data:
+            for uuid in dependencies_data:
+                self.delete_dependencies(uuid, recursive=True)
+
+    def clean_dependencies(self):
+        dependencies_path = self.get_dependencies_path()
+        if not dependencies_path or not os.path.isdir(dependencies_path):
+            return
+
+        all_uuids = self.get_all_uuids()
+        dependencies_files = fileio.get_files(dependencies_path)
+        for dependency_file in dependencies_files:
+            dependency_name = os.path.splitext(dependency_file)[0].split('.')[0]
+            if dependency_name not in all_uuids:
+                fileio.delete_file(path_utils.join_path(dependencies_path, dependency_file))
+
+        dependencies_files = fileio.get_files(dependencies_path)
+        for dependency_file in dependencies_files:
+            dependency_file_path = path_utils.join_path(dependencies_path, dependency_file)
+            if not os.path.isfile(dependency_file_path):
+                continue
+            dependency_data = jsonio.read_file(dependency_file_path)
+            if not dependency_data:
+                continue
+            modified = False
+            for dependency_uuid in dependency_data:
+                if dependency_uuid not in all_uuids:
+                    dependency_data.pop(dependency_uuid)
+                    modified = True
+            if modified:
+                jsonio.write_to_file(dependency_data, dependency_file_path)
+
+    # ============================================================================================================
+    # SEARCH
+    # ============================================================================================================
+
+    def is_search_enabled(self):
+        """
+        Returns whether search functionality is enabled or not
+        :return: bool
+        """
+
+        return self._search_enabled
+
+    def set_search_enabled(self, flag):
+        """
+        Sets whether search functionality is enabled or not
+        :param flag: bool
+        """
+
+        self._search_enabled = flag
+
+    def sort_by(self):
+        """
+        Return the list of fields to sorty by
+        :return: list(str)
+        """
+
+        return self.settings().get('sort_by', list())
+
+    def set_sort_by(self, fields):
+        """
+        Set the list of fields to group by
+        >>> set_sorty_by(['name:asc', 'type:asc'])
+        :param fields: list(str)
+        """
+
+        settings = self.settings()
+        settings['sort_by'] = python.force_list(fields)
+        self.save_settings(settings)
+
+    def group_by(self):
+        """
+        Return the list of fields to group by
+        :return: list(str)
+        """
+
+        return self.settings().get('group_by', list())
+
+    def set_group_by(self, fields):
+        """
+        Set the list of fields to group by
+        >>> set_group_by(['name:asc', 'type:asc'])
+        :param fields: list(str)
+        """
+
+        settings = self.settings()
+        settings['group_by'] = python.force_list(fields)
+        self.save_settings(settings)
+
+    def fields(self):
+        """
+        Returns all the fields for the library
+        :return: list(str)
+        """
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'fields_get')
+
+        fields_list = list()
+        for field_list in connection.results:
+            fields_list.append({
+                'name': field_list[0],
+                'sortable': field_list[1],
+                'groupable': field_list[2]
+            })
+
+        return fields_list
+
+    def field_names(self):
+        """
+        Returns all field names for the library
+        :return: list(str)
+        """
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'field_names_get')
+
+        return [row[0] for row in connection.results]
+
+    def queries(self, exclude=None):
+        """
+        Return all queries for the data base excluding the given ones
+        :param exclude: list(str) or None
+        :return: list(dict)
+        """
+
+        queries = list()
+        exclude = exclude or list()
+
+        for query in self._queries.values():
+            if query.get('name') not in exclude:
+                queries.append(query)
+
+        return queries
+
+    def query_exists(self, name):
+        """
+        Check if the given query name exists
+        :param name: str
+        :return: bool
+        """
+
+        return name in self._queries
+
+    def add_global_query(self, query):
+        """
+        Add a global query to library
+        :param query: dict
+        """
+
+        self._global_queries[query['name']] = query
+
+    def add_query(self, query):
+        """
+        Add a search query to the library
+        >>> add_query({
+        >>>    'name': 'Test Query',
+        >>>    'operator': 'or',
+        >>>    'filters': [
+        >>>        ('folder', 'is', '/lib/proj/test'),
+        >>>        ('folder', 'startswith', '/lib/proj/test'),
+        >>>    ]
+        >>>})
+        :param query: dict
+        """
+
+        self._queries[query['name']] = query
+
+    def remove_query(self, name):
+        """
+        Remove the query with the given name
+        :param name: str
+        """
+
+        if name in self._queries:
+            del self._queries[name]
+
+    def distinct(self, field, queries=None, sort_by='name'):
+        """
+        Returns all values for the given field
+        :param field: str
+        :param queries: variant, None or list(dict)
+        :param sort_by: str
+        :return: list
+        """
+
+        results = dict()
+        queries = queries or list()
+        queries.extend(self._global_queries.values())
+
+        items_data = self.find_data() or dict()
+        for identifier, data in items_data.items():
+            value = data.get(field)
+            if value is not None:
+                results.setdefault(value, {'count': 0, 'name': value})
+                match = self.match(data, queries)
+                if match:
+                    results[value]['count'] += 1
+
+        def sort_key(facet):
+            return facet.get(sort_by)
+
+        return sorted(list(results.values()), key=sort_key)
+
+    def search(self, limit=None):
+        """
+        Runs a search using the queries added to the library data
+        """
+
+        if not self.is_search_enabled():
+            return
+
+        start_time = time.time()
+        LOGGER.debug('Searching items ...')
+        self.searchStarted.emit()
+
+        self._results = self.find_items(self.queries(), limit=limit)
+        self._grouped_results = self.group_items(self._results, self.group_by())
+
+        self._search_time = time.time() - start_time
+        self.searchFinished.emit()
+        LOGGER.debug('Search time: {}'.format(self._search_time))
+
+    def find(self, tags, limit=None):
+        """
+        Returns list of identifiers which match the given paths
+        :param tags: list(str)
+        :param limit: int, maximum number of hits to return
+        :return: list(str)
+        """
+
+        self.searchStarted.emit()
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            replacements = {'$(LIMIT)': limit or 9 ** 9}
+            tags = python.force_list(tags)
+            if tags:
+                compare_str = ''
+                like_str = ''
+                name_str = ''
+
+                for tag in tags:
+                    compare_str += "tag='%s' OR " % tag
+                    like_str += "identifier LIKE '%" + tag + "%' AND "
+                    name_str += "name LIKE '%" + tag + "%' AND "
+
+                compare_str = compare_str[:-4]
+                like_str = like_str[:-5]
+                name_str = name_str[:-5]
+
+                replacements.update({
+                    '$(TAG_COMPARE)': compare_str,
+                    '$(LIKE_COMPARE)': like_str,
+                    '$(NAME_COMPARE)': name_str,
+                    '$(COMPARE_COUNT)': str(len(tags))
+                })
+
+                self._execute(connection, 'find', replacements=replacements)
+            else:
+                self._execute(connection, 'find_all', replacements=replacements)
+
+        # self.searchFinished.emit()
+
+        return [row[1] for row in connection.results]
+
+    def find_data(self, identifier=None):
+        """
+        Returns a list of dictionaries mapping identifiers with the data stored in the DB
+        If no identifier is given, all identifiers data will be return
+        :param identifier: str,
+        :return: list(dict())
+        """
+
+        identifiers = python.force_list(identifier or self.find(None))
+        field_names = self.field_names()
+
+        if self._relative_paths:
+            identifiers = [self._get_relative_identifier(identifier) for identifier in identifiers]
+
+        data_mapping = dict()
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'find_fields', replacements={
+                '$(IDENTIFIERS)': ','.join(["'{}'".format(identifier) for identifier in identifiers])[1:-1],
+                '$(FIELDS)': ','.join(field_names)})
+
+        for result in connection.results:
+            identifier = result[0]
+            data_mapping.setdefault(identifier, dict())
+            data_list = result[1:]
+            for i, data_value in enumerate(data_list):
+                data_mapping[identifier][field_names[i]] = data_value
+
+            # We store identifier and the its long version
+            data_mapping[identifier]['identifier'] = identifier
+            data_mapping[identifier]['path'] = self.format_identifier(identifier)
+
+        return data_mapping
+
+    def find_items(self, queries, limit=None):
+        """
+        Returns list of items which match the given paths
+        :param queries: list(str)
+        :param limit: int, maximum number of hits to return
+        :return: list(str)
+        """
+
+        fields = list()
+        results = list()
+
+        queries = copy.copy(queries)
+        queries.extend(self._global_queries.values())
+
+        items_data = self.find_data()
+        if not items_data:
+            return results
+
+        for identifier, data in items_data.items():
+            match = self.match(data, queries)
+            if match:
+                item = self.get(identifier)
+                results.append(item)
+            fields.extend(list(data.keys()))
+
+        return results
+
+    def find_id(self, identifier):
+        """
+        Returns unique id of the given identifier
+        :param identifier: str
+        :return: str
+        """
+
+        identifier = self.get_identifier(identifier)
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'find_id', replacements={'$(IDENTIFIER)': identifier})
+
+        results = connection.results
+        if not results:
+            return None
+
+        return results[0][0]
+
+    def find_identifier_from_uuid(self, uuid):
+        """
+        Returns identifier from tis UUID
+        :param uuid: str
+        :return: str
+        """
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'find_from_uuid', replacements={'$(UUID)': uuid})
+
+        results = connection.results
+        if not results:
+            return None
+
+        return results[0][0]
+
+    def find_uuid(self, identifier):
+        """
+        Returns UUID of the given identifier
+        :param identifier: str
+        :return: str
+        """
+
+        identifier = self.get_identifier(identifier)
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'find_uuid', replacements={'$(IDENTIFIER)': identifier})
+
+        results = connection.results
+        if not results:
+            return None
+
+        return results[0][0]
+
+    def results(self):
+        """
+        Return the items found after a search is executed
+        :return: list(LibraryItem)
+        """
+
+        return self._results
+
+    def grouped_results(self):
+        """
+        Return the results grouped after a search is executed
+        :return: dict
+        """
+
+        return self._grouped_results
+
+    def search_time(self):
+        """
+        Return the time taken to run a search
+        :return: float
+        """
+
+        return self._search_time
+
+    # ============================================================================================================
+    # SETTINGS
+    # ============================================================================================================
+
+    def settings(self):
+        """
+        Will try to return the stored settings. If no settings are available, an empty dictionary will be returned.
+        :return: dict
+        """
+
+        with sqlite.ConnectionContext(self._id, get=True) as connection:
+            self._execute(connection, 'settings_get')
+
+        try:
+            return json.loads(connection.results[0][0])
+        except IndexError:
+            return dict()
+
+    def update_settings(self, settings_dict):
+        """
+        Updates current db settings with the values of the given settings
+        :param settings_dict: dict
+        """
+
+        settings = self.settings()
+        settings_dict = settings_dict or dict()
+        settings.update(settings_dict)
+
+        self.save_settings(settings)
+
+    def save_settings(self, settings_dict):
+        """
+        Stores given settings dictionary in data base. The given data must be JSON serializable.
+        :param settings_dict: dict
+        """
+
+        with sqlite.ConnectionContext(self._id, commit=True) as connection:
+            self._execute(connection, 'settings_set', replacements={'$(SETTINGS)': json.dumps(settings_dict)})
+
+    # ============================================================================================================
+    # INTERNAL
+    # ============================================================================================================
+
+    def _post_sync(self):
         """
         Internal function that executed once the library items data have been synced
         Override to implement custom functionality
-        :param item_data: dict
         """
 
         pass
 
-    def _read(self):
+    def _get_relative_identifier(self, identifier):
         """
-        Internal function that reads the data from disk and returns it a dictionary object
+        Internal function that returns a relative identifier from the given one
+        :param identifier: str
+        :return: str
+        """
+
+        if os.path.isabs(identifier):
+            identifier = path_utils.clean_path(os.path.relpath(identifier, self.get_directory()))
+
+        if identifier == '.' or identifier.startswith('./'):
+            return identifier
+
+        return path_utils.clean_path('./{}'.format(identifier))
+
+    def _clean_path(self, data_path):
+        """
+        Returns a cleaned version of the given path to make sure that it works properly within data base
+        :param data_path: str
+        :return: str
+        """
+
+        return path_utils.clean_path(data_path)
+
+    def _get_commands_dict(self):
+        """
+        Internal function that generates a dictionary where the key is the SQL command name and the value is the SQL
+        data
         :return: dict
         """
 
-        if not self.path():
-            LOGGER.info('No path set for reading the data from disk')
-            return self._data
+        commands_dict = dict()
 
-        if not self.is_dirty():
-            return self._data
+        for command in os.listdir(self.SQL_COMMANDS_DIR):
+            with open(os.path.join(self.SQL_COMMANDS_DIR, command)) as f:
+                commands_dict[os.path.splitext(command)[0]] = [
+                    statement.strip() for statement in f.read().split(';') if statement.strip()]
 
-        self._data = utils.read_json(self.database_path())
-        self.set_dirty(False)
+        return commands_dict
 
-        return self._data
-
-    def _save(self, data):
+    def _execute(self, context, command, replacements=None):
         """
-        Internal function that writes the given data dict object to the data on disk
-        :param data: dict
+        Internal function that all SQL queries should be routed through. This ensures a consistent result and suite
+        of reporting.
+        :param context: sqlite.ConnectionContext, all calls should be done withing a ConnectionContext to aid
+            performance
+        :param command: str, SQL command name to run
+        :param replacements: dict, any search and replace strings to process on the SQL command
         """
 
-        if not self.path():
-            LOGGER.info('No path set for saving the data to disk')
+        statements = self._commands[command]
+
+        for single_statement in statements:
+            if replacements:
+                for k, v in replacements.items():
+                    single_statement = single_statement.replace(k, str(v))
+
+            LOGGER.debug('\n' + ('-' * 100))
+            LOGGER.debug(single_statement)
+
+            try:
+                context.cursor.execute(single_statement)
+            except sqlite3.Error:
+                LOGGER.error(sys.exc_info())
+                LOGGER.info('Unable to execute SQL command : {}'.format(single_statement))
+                return list()
+
+    def _sort_data_plugins(self):
+        """
+        Internal function that makes sure that data plugins list is sort by plugin priority
+        """
+
+        self._data_plugins = sorted(self._data_factory.plugins(), key=lambda x: x.PRIORITY, reverse=True)
+
+    def _register_data_plugins_classes_from_config(self):
+        """
+        Internal function that registers all classes found in tpDcc-libs-datalibrary configuration file
+        """
+
+        datalib_config = configs.get_library_config('tpDcc-libs-datalibrary')
+        extra_item_classes = datalib_config.get('extra_item_classes')
+        if not extra_item_classes:
             return
 
-        utils.save_json(self.database_path(), data)
-        self.set_dirty(True)
+        for item_class_name in extra_item_classes:
+            module_class = modules.resolve_module(item_class_name)
+            if not module_class:
+                LOGGER.warning('Impossible to register data item class: "{}"'.format(module_class))
+                continue
 
-    def _clear(self):
+            self.register_data_class(item_class_name, 'tpDcc')
+
+    def _update_fields(self, identifier, scanned_fields):
         """
-        Internal function that clears all the item data
+        Internal function that updates the scanned fields returned by the scan plugin
+        :param scanned_fields: dict
         """
 
-        self._items = list()
-        self._results = list()
-        self._grouped_results = dict()
-        self.dataChanged.emit()
+        scanned_fields['uuid'] = self.get_uuid(identifier)
+
+        if self._relative_paths:
+            # We update the scanned directory to make sure its stored relative to current project path
+            scanned_fields['directory'] = self._get_relative_identifier(scanned_fields['directory'])
+
+        item = self.get(identifier)
+        if item:
+            scanned_fields['type'] = item.type()

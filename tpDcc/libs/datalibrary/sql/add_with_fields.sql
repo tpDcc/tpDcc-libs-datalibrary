@@ -1,0 +1,2 @@
+INSERT OR IGNORE INTO elements (identifier,$(FIELDS))
+VALUES ('$(IDENTIFIER)', $(FIELDS_VALUES));

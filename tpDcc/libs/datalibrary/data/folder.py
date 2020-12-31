@@ -2,198 +2,146 @@
 # -*- coding: utf-8 -*-
 
 """
-Module that contains library folder item data implementation
+Module that contains folder data part implementation
 """
 
 from __future__ import print_function, division, absolute_import
 
 import os
-import logging
+import re
 
-from Qt.QtCore import QLocale, QFileInfo
+from tpDcc.libs.python import folder, path as path_utils
 
-from tpDcc.libs.python import folder as folder_utils
-
-from tpDcc.libs.datalibrary.core import consts, dataitem
-
-LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
+from tpDcc.libs.datalibrary.core import datapart
 
 
-class FolderData(dataitem.DataItem):
+class FolderData(datapart.DataPart):
 
     DATA_TYPE = 'folder'
-    SYNC_ORDER = 100        # Last item to run when syncing
-
-    ICON_NAME = 'folder'
+    MENU_ICON = 'folder'
     MENU_NAME = 'Folder'
-    MENU_ORDER = 0          # First menu item
-    TYPE_ICON_NAME = ''     # Do not show a type icon for folder items
+    PRIORITY = 2
 
-    ENABLE_NESTED_ITEMS = True
-    ENABLE_DELETE = True
-
-    TRANSFER_BASENAME = None
-    TRANSFER_CLASS = None
-
-    # ============================================================================================================
-    # PROPERTIES
-    # ============================================================================================================
-
-    @property
-    def icon_color(self):
-        """
-        Returns the icon color for the folder item
-        :return: str
-        """
-
-        return self.data.get('color', '')
-
-    @icon_color.setter
-    def icon_color(self, color_string):
-        """
-        Sets the icon color for the folder item
-        :param color_string: str
-        """
-
-        if color_string == consts.DEFAULT_FOLDER_ICON_COLOR:
-            color_string = ''
-
-        self.update_metadata({'color': color_string})
-
-    @property
-    def custom_icon_path(self):
-        """
-        Returns the custom icon path of the folder item
-        :return: str
-        """
-
-        return self.data.get('icon', '')
-
-    @custom_icon_path.setter
-    def custom_icon_path(self, icon_name):
-        """
-        Sets the custom icon of the folder item
-        :param icon_name: str
-        """
-
-        if icon_name == self.ICON_NAME:
-            return
-
-        self.update_metadata({'icon': icon_name})
+    _split = re.compile('/|\.|,|-|:|_', re.I)
 
     # ============================================================================================================
     # OVERRIDES
     # ============================================================================================================
 
-    @dataitem.DataItem.data.getter
-    def data(self):
-        data = dataitem.DataItem.data.fget(self)
-
-        # If not icon is defined and the item is in trash, we update the icon
-        if self.path.endswith('Trash') and not data.get('icon'):
-            data['icon'] = 'trash.png'
-
-        return data
-
     @classmethod
-    def match(cls, path):
-        """
-        Returns whether the given path locations is supported by the item
-        :param path: str
-        :return: bool
-        """
-
-        if os.path.isdir(path):
+    def can_represent(cls, identifier, only_extension=False):
+        if only_extension:
+            return False
+        if os.path.isdir(identifier):
             return True
 
-    def save(self, *args, **kwargs):
+        return False
+
+    def label(self):
+        return os.path.basename(self.identifier())
+
+    def icon(self):
+        return 'folder'
+
+    def type(self):
+        return 'folder'
+
+    def menu_name(self):
+        return 'Folder'
+
+    def mandatory_tags(self):
+        tags = [
+            part.lower()
+            for part in self._split.split(self.identifier())
+            if 2 < len(part) < 20
+        ]
+        return tags
+
+    def functionality(self):
+        return dict(
+            directory=self.directory,
+            save=self.save,
+            rename=self.rename,
+            copy=self.copy,
+            move=self.move,
+            delete=self.delete
+        )
+
+    # ============================================================================================================
+    # BASE
+    # ============================================================================================================
+
+    def directory(self):
         """
-        This function MUST be reimplemented to load any item data
-        Override to avoid not implemented exception
-        :param args: list
-        :param kwargs: dict
+        Returns identifier directory
+        :return: str
         """
 
-        sync = kwargs.pop('sync', False)
+        return path_utils.clean_path(os.path.dirname(self.format_identifier()))
 
-        LOGGER.debug('Saving item: {}'.format(self.path))
+    def save(self, **kwargs):
 
-        # NOTE: for folders, path variable contains the full directory name, so we pass  the dirname of that path
-        new_folder = folder_utils.create_folder(self.name, os.path.dirname(self.path))
-
-        self.sync_item_data()
-
-        LOGGER.debug('Item Saved: {}'.format(self.path))
-
-        self.saved.emit(self)
-
-        if sync and self.library:
-            self.library.sync(progress_callback=None)
+        new_folder = folder.create_folder(self.format_identifier())
 
         return os.path.isdir(new_folder)
 
-    def load_schema(self):
-        """
-        Gets the options used to load the item
-        :return: list(dict)
-        """
+    def rename(self, new_name):
 
-        file_info = QFileInfo(self.path)
-        created = QLocale().toString(file_info.created(), QLocale.ShortFormat)
-        modified = QLocale().toString(file_info.lastModified(), QLocale.ShortFormat)
-        icon_name = self.data.get('icon', '')
+        current_path = self.format_identifier()
 
-        return [
-            {
-                'name': 'infoGroup',
-                'title': 'Info',
-                'value': True,
-                'type': 'group',
-                'persistent': True,
-                'persistentKey': 'BaseItem'
-            },
-            {
-                'name': 'name',
-                'value': self.name
-            },
-            {
-                'name': 'path',
-                'value': self.path
-            },
-            {
-                'name': 'created',
-                'value': created
-            },
-            {
-                'name': 'modified',
-                'value': modified
-            },
-            {
-                'name': 'color',
-                'type': 'color',
-                'value': self.icon_color(),
-                'layout': 'vertical',
-                'label': {'visible': False},
-                'colors': consts.DEFAULT_FOLDER_ICON_COLORS
-            },
-            {
-                'name': 'icon',
-                'type': 'iconPicker',
-                'value': icon_name,
-                'layout': 'vertical',
-                'label': {'visible': False}
-            }
-        ]
+        current_name = os.path.basename(current_path)
+        if current_name == new_name:
+            return current_path
 
-    def load_validator(self, **options):
-        """
-        Validates the current load options
-        :param options: dict
-        :return: list(dict)
-        """
+        new_path = folder.rename_folder(current_path, new_name)
+        if new_path == current_path:
+            return current_path
 
-        if options.get('fieldChanged') == 'color':
-            self.set_icon_color(options.get('color'))
+        # TODO: Instead of calling sync we should add a specific rename SQL function
+        self._db.sync()
 
-        if options.get('fieldChanged') == 'icon':
-            self.set_custom_icon(options.get('icon'))
+        return new_path
+
+    def copy(self, target_path):
+        current_path = self.format_identifier()
+
+        if not os.path.isdir(target_path):
+            folder.create_folder(target_path)
+
+        folder.copy_directory_contents(current_path, target_path)
+
+        # We force sync after doing copy operation
+        self._db.sync()
+
+        return target_path
+
+    def move(self, target_path):
+        current_path = self.format_identifier()
+
+        before_identifiers = list()
+        folders = folder.get_folders(current_path, recursive=True, full_path=True)
+        files = folder.get_files(current_path, recursive=True, full_path=True)
+        for file_folder in folders + files:
+            before_identifiers.append(file_folder)
+
+        target_path = path_utils.join_path(target_path, os.path.basename(current_path))
+        valid = folder.move_folder(current_path, target_path)
+        if not valid:
+            return None
+
+        self._db.move(current_path, target_path)
+
+        after_identifiers = list()
+        folders = folder.get_folders(target_path, recursive=True, full_path=True)
+        files = folder.get_files(target_path, recursive=True, full_path=True)
+        for file_folder in folders + files:
+            after_identifiers.append(file_folder)
+
+        for identifier, new_identifier in zip(before_identifiers, after_identifiers):
+            self._db.move(identifier, new_identifier)
+
+        return target_path
+
+    def delete(self):
+        folder.delete_folder(self.format_identifier())
+        self._db.remove(self.identifier())
