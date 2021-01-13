@@ -15,11 +15,11 @@ import shortuuid
 from tpDcc import dcc
 from tpDcc.managers import configs
 from tpDcc.libs.python import python, timedate, fileio, jsonio, signal, version, sqlite, plugin, modules
-from tpDcc.libs.python import path as path_utils, folder as folder_utils
+from tpDcc.libs.python import path as path_utils, contexts, folder as folder_utils
 
-from tpDcc.libs.datalibrary.core import scanner, datapart
+from tpDcc.libs.datalibrary.core import consts, scanner, datapart
 
-LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
+LOGGER = logging.getLogger(consts.LIB_ID)
 
 
 class DataLibrary(object):
@@ -45,6 +45,7 @@ class DataLibrary(object):
         self._global_queries = dict()
         self._search_time = 0
         self._search_enabled = True
+        self._black_list = ['.git', '.gitattributes']
 
         plugin_locations = list()
         if os.path.exists(identifier):
@@ -345,7 +346,7 @@ class DataLibrary(object):
                 for field_name in field_names:
                     field_values.append('' if field_name not in scanned_fields else scanned_fields[field_name])
                 field_values = ','.join(
-                    "'{}'".format(field) if python.is_string(field) else str(field) for field in field_values)
+                    "'{}'".format(field) if python.is_string(field) else "'{}'".format(field) for field in field_values)
                 self._execute(
                     connection, 'add_with_fields', replacements={
                         '$(IDENTIFIER)': identifier,
@@ -434,18 +435,28 @@ class DataLibrary(object):
         :param identifier: str, dta identifier
         """
 
-        identifier = self.get_identifier(identifier)
-        uuid = self.find_uuid(identifier)
-
+        uuids = list()
+        removed_identifiers = list()
+        identifiers = python.force_list(identifier)
         with sqlite.ConnectionContext(self._id, commit=True) as connection:
-            self._execute(connection, 'remove', replacements={'$(IDENTIFIER)': identifier})
-        self.dataChanged.emit()
+            for identifier in identifiers:
+                identifier = self.get_identifier(identifier)
+                uuid = self.find_uuid(identifier)
+                self._execute(connection, 'remove', replacements={'$(IDENTIFIER)': identifier})
+                removed_identifiers.append(identifier)
+                if uuid:
+                    uuids.append(uuid)
 
-        if uuid:
-            self.delete_metadata(uuid)
-            self.delete_thumb(uuid)
-            self.delete_version(uuid)
-            self.delete_dependencies(uuid, recursive=recursive)
+        if removed_identifiers:
+            self.dataChanged.emit()
+
+        if uuids:
+            self.delete_metadata(uuids)
+            self.delete_thumb(uuids)
+            self.delete_version(uuids)
+            self.delete_dependencies(uuids, recursive=recursive)
+
+        return removed_identifiers
 
     def skip_regexes(self):
         """
@@ -584,6 +595,8 @@ class DataLibrary(object):
 
         field_names = self.field_names()
 
+        blacklisted_identifiers = list()
+
         with sqlite.ConnectionContext(self._id, commit=True) as connection:
             for location in locations:
                 for scan_plugin in self._scan_factory.plugins():
@@ -592,6 +605,11 @@ class DataLibrary(object):
                     for identifier in scan_plugin.identifiers(location, skip_regex, recursive=recursive):
 
                         if identifier == location:
+                            continue
+
+                        identifier_parts = os.path.normpath(identifier).split(os.sep)
+                        if any(item in self._black_list for item in identifier_parts):
+                            blacklisted_identifiers.append(identifier)
                             continue
 
                         field_values = list()
@@ -615,8 +633,9 @@ class DataLibrary(object):
             self.sync_thumbs(identifiers=scanned_identifiers)
             self.sync_dependencies(identifiers=scanned_identifiers)
 
-            self.clean_invalid_identifiers()
-
+        # self.clean_invalid_identifiers(blacklisted_identifiers)
+        with contexts.Timer('Cleaning invalid identifiers', logger=LOGGER):
+            self.clean_invalid_identifiers(blacklisted_identifiers)
 
         if progress_callback:
             progress_callback('Post Callbacks', 100)
@@ -633,12 +652,18 @@ class DataLibrary(object):
 
         return scanned_identifiers
 
-    def clean_invalid_identifiers(self):
+    def clean_invalid_identifiers(self, blacklisted_identifiers=None):
+        identifiers_to_remove = list()
+        blacklisted_identifiers = list(set(python.force_list(blacklisted_identifiers)))
         for identifier in self.find(None):
             for scan_plugin in self._scan_factory.plugins():
-                if scan_plugin.check(self.format_identifier(identifier)) == scan_plugin.ScanStatus.NOT_VALID:
-                    self.remove(identifier)
+                full_identifier = self.format_identifier(identifier)
+                if scan_plugin.check(full_identifier) == scan_plugin.ScanStatus.NOT_VALID or \
+                        full_identifier in blacklisted_identifiers:
+                    identifiers_to_remove.append(identifier)
                     break
+
+        self.remove(identifiers_to_remove)
 
     def clear(self):
         """
@@ -969,13 +994,16 @@ class DataLibrary(object):
                 break
 
     def delete_version(self, uuid):
+
+        uuids = python.force_list(uuid)
+
         versions_path = self.get_versions_path()
         if not versions_path or not os.path.isdir(versions_path):
             return
 
         version_folders = folder_utils.get_folders(versions_path)
         for version_folder in version_folders:
-            if version_folder == uuid:
+            if version_folder in uuids:
                 folder_utils.delete_folder(path_utils.join_path(versions_path, version_folder))
 
     def clean_versions(self):
@@ -1077,6 +1105,9 @@ class DataLibrary(object):
                 break
 
     def delete_thumb(self, uuid):
+
+        uuids = python.force_list(uuid)
+
         thumbs_path = self.get_thumbs_path()
         if not thumbs_path or not os.path.isdir(thumbs_path):
             return
@@ -1084,7 +1115,7 @@ class DataLibrary(object):
         thumb_files = fileio.get_files(thumbs_path)
         for thumb_file in thumb_files:
             thumb_name = os.path.splitext(thumb_file)[0]
-            if thumb_name == uuid:
+            if thumb_name in uuids:
                 fileio.delete_file(path_utils.join_path(thumbs_path, thumb_file))
                 break
 
@@ -1221,6 +1252,9 @@ class DataLibrary(object):
                 break
 
     def delete_metadata(self, uuid):
+
+        uuids = python.force_list(uuid)
+
         metadata_path = self.get_metadata_path()
         if not metadata_path or not os.path.isdir(metadata_path):
             return
@@ -1228,7 +1262,7 @@ class DataLibrary(object):
         meta_files = fileio.get_files(metadata_path)
         for meta_file in meta_files:
             meta_name = os.path.splitext(meta_file)[0].split('.')[0]
-            if meta_name == uuid:
+            if meta_name in uuids:
                 fileio.delete_file(path_utils.join_path(metadata_path, meta_file))
                 break
 
@@ -1374,6 +1408,9 @@ class DataLibrary(object):
                 jsonio.write_to_file(dependency_data, dependency_file_path)
 
     def delete_dependencies(self, uuid, recursive=True):
+
+        uuids = python.force_list(uuid)
+
         dependencies_path = self.get_dependencies_path()
         if not dependencies_path or not os.path.isdir(dependencies_path):
             return
@@ -1382,7 +1419,7 @@ class DataLibrary(object):
         dependencies_files = fileio.get_files(dependencies_path)
         for dependency_file in dependencies_files:
             dependency_name = os.path.splitext(dependency_file)[0].split('.')[0]
-            if dependency_name == uuid:
+            if dependency_name in uuids:
                 dependency_file_path = path_utils.join_path(dependencies_path, dependency_file)
                 dependencies_data = jsonio.read_file(dependency_file_path)
                 fileio.delete_file(dependency_file_path)
@@ -1398,15 +1435,14 @@ class DataLibrary(object):
                 continue
             modified = False
             for dependency_uuid in dependency_data.copy():
-                if dependency_uuid == uuid:
+                if dependency_uuid in uuids:
                     dependency_data.pop(dependency_uuid)
                     modified = True
             if modified:
                 jsonio.write_to_file(dependency_data, dependency_file_path)
 
         if recursive and dependencies_data:
-            for uuid in dependencies_data:
-                self.delete_dependencies(uuid, recursive=True)
+            self.delete_dependencies(list(dependencies_data.keys()), recursive=True)
 
     def clean_dependencies(self):
         dependencies_path = self.get_dependencies_path()
