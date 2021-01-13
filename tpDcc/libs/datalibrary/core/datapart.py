@@ -13,7 +13,9 @@ import logging
 
 from tpDcc.libs.python import fileio, jsonio, version, folder, composite, path as path_utils
 
-LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
+from tpDcc.libs.datalibrary.core import consts
+
+LOGGER = logging.getLogger(consts.LIB_ID)
 
 
 class DataPart(composite.Composition):
@@ -242,7 +244,7 @@ class DataPart(composite.Composition):
         :return: str
         """
 
-        return self._db.format_identifier(self.identifier())
+        return self._db.format_identifier(self.identifier()) if self._db else self.identifier()
 
     def name(self):
         """
@@ -417,11 +419,12 @@ class DataPart(composite.Composition):
     # DEPENDENCIES
     # ============================================================================================================
 
-    def get_dependencies(self):
+    def get_dependencies(self, data_path=None):
         if not self.library:
             return dict()
 
-        deps_dict = self.library.get_dependencies(self.format_identifier(), as_uuid=False)
+        data_path = self.library.format_identifier(data_path) if data_path else self.format_identifier()
+        deps_dict = self.library.get_dependencies(data_path, as_uuid=False)
         if not deps_dict:
             return dict()
 
@@ -441,6 +444,9 @@ class DataPart(composite.Composition):
         return result
 
     def update_dependencies(self, dependencies=None, recursive=True):
+
+        if not dependencies or not isinstance(dependencies, dict):
+            dependencies = dict()
 
         dependency_file_name = '{}.json'.format(self._db.get_uuid(self.format_identifier()))
         dependency_path = path_utils.join_path(self._db.get_dependencies_path(), dependency_file_name)
