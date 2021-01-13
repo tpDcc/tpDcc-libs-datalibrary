@@ -12,10 +12,12 @@ import logging.config
 
 from tpDcc.core import library
 
+from tpDcc.libs.datalibrary.core import consts
+
 
 class DataLibraryLib(library.DccLibrary, object):
 
-    ID = 'tpDcc-libs-datalibrary'
+    ID = consts.LIB_ID
 
     def __init__(self, *args, **kwargs):
         super(DataLibraryLib, self).__init__(*args, **kwargs)
