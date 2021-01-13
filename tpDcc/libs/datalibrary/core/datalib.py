@@ -15,7 +15,7 @@ import shortuuid
 from tpDcc import dcc
 from tpDcc.managers import configs
 from tpDcc.libs.python import python, timedate, fileio, jsonio, signal, version, sqlite, plugin, modules
-from tpDcc.libs.python import path as path_utils, contexts, folder as folder_utils
+from tpDcc.libs.python import path as path_utils, contexts, decorators, folder as folder_utils
 
 from tpDcc.libs.datalibrary.core import consts, scanner, datapart
 
@@ -570,6 +570,7 @@ class DataLibrary(object):
             if plugin.can_represent(location):
                 return plugin.above(location), plugin.below(location)
 
+    @decorators.timestamp
     def sync(self, locations=None, recursive=True, full=True, progress_callback=lambda message, percent: None):
         """
         This function cycles over all the search locations stored in the data base and attempts to populate it with
@@ -586,8 +587,11 @@ class DataLibrary(object):
 
         locations = python.force_list(locations or self.scan_locations())
 
+        total_progress = 0
+        progress_increment = 100 / 9    # 100 / number of sync steps
+
         if progress_callback:
-            progress_callback('Syncing', 0)
+            progress_callback('Syncing', total_progress)
 
         LOGGER.debug('Starting Sync : {}'.format(locations))
 
@@ -627,19 +631,43 @@ class DataLibrary(object):
                         scanned_identifiers.append(relative_identifier if self._relative_paths else identifier)
 
         if full:
-            self.sync_tags(identifiers=scanned_identifiers)
-            self.sync_versions(identifiers=scanned_identifiers)
-            self.sync_metadata(identifiers=scanned_identifiers)
-            self.sync_thumbs(identifiers=scanned_identifiers)
-            self.sync_dependencies(identifiers=scanned_identifiers)
+            with contexts.Timer('Tags synced', logger=LOGGER):
+                if progress_callback:
+                    total_progress += progress_increment
+                    progress_callback('Syncing Tags', total_progress)
+                self.sync_tags(identifiers=scanned_identifiers)
+            with contexts.Timer('Versions synced', logger=LOGGER):
+                if progress_callback:
+                    total_progress += progress_increment
+                    progress_callback('Syncing Versions', total_progress)
+                self.sync_versions(identifiers=scanned_identifiers)
+            with contexts.Timer('Metadata synced', logger=LOGGER):
+                if progress_callback:
+                    total_progress += progress_increment
+                    progress_callback('Syncing Metadata', total_progress)
+                self.sync_metadata(identifiers=scanned_identifiers)
+            with contexts.Timer('Thumbs synced', logger=LOGGER):
+                if progress_callback:
+                    total_progress += progress_increment
+                    progress_callback('Syncing Thumbs', total_progress)
+                self.sync_thumbs(identifiers=scanned_identifiers)
+            with contexts.Timer('Dependencies synced', logger=LOGGER):
+                if progress_callback:
+                    total_progress += progress_increment
+                    progress_callback('Syncing Dependencies', total_progress)
+                self.sync_dependencies(identifiers=scanned_identifiers)
 
         # self.clean_invalid_identifiers(blacklisted_identifiers)
-        with contexts.Timer('Cleaning invalid identifiers', logger=LOGGER):
+        with contexts.Timer('Cleaned invalid identifiers', logger=LOGGER):
+            if progress_callback:
+                total_progress += progress_increment
+                progress_callback('Cleanup', total_progress)
             self.clean_invalid_identifiers(blacklisted_identifiers)
 
         if progress_callback:
-            progress_callback('Post Callbacks', 100)
-
+            if progress_callback:
+                total_progress += progress_increment
+                progress_callback('Post Callbacks', total_progress)
         self._post_sync()
 
         self.syncCompleted.emit()
