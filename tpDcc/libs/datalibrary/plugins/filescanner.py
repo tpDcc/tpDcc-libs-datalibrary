@@ -1,3 +1,12 @@
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+Module that contains base data scanner for files located in disk
+"""
+
+from __future__ import print_function, division, absolute_import
+
 import os
 import time
 import locale

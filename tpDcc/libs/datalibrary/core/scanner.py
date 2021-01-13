@@ -1,3 +1,13 @@
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+Module that contains base data parts scanner implementation
+"""
+
+from __future__ import print_function, division, absolute_import
+
+
 class BaseScanner(object):
 
     class ScanStatus(object):

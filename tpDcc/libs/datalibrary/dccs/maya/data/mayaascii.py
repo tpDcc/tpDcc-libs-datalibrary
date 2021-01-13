@@ -16,9 +16,9 @@ import logging
 from tpDcc import dcc
 from tpDcc.core import dcc as core_dcc
 
-from tpDcc.libs.datalibrary.core import datapart
+from tpDcc.libs.datalibrary.core import consts, datapart
 
-LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
+LOGGER = logging.getLogger(consts.LIB_ID)
 
 
 class MayaAsciiData(datapart.DataPart):
@@ -44,31 +44,6 @@ class MayaAsciiData(datapart.DataPart):
     @classmethod
     def supported_dccs(cls):
         return [core_dcc.Dccs.Maya]
-
-    # def save_schema(cls):
-    #     """
-    #     Returns the schema used for saving the item
-    #     :return: dict
-    #     """
-    #
-    #     return [
-    #         {
-    #             'name': 'folder',
-    #             'type': 'path',
-    #             'layout': 'vertical',
-    #             'visible': False
-    #         },
-    #         {
-    #             "name": "name",
-    #             "type": "string",
-    #             "layout": "vertical"
-    #         },
-    #         {
-    #             "name": "objects",
-    #             "type": "objects",
-    #             "layout": "vertical"
-    #         }
-    #     ]
 
     @classmethod
     def metadata_dict(cls):
@@ -159,6 +134,8 @@ class MayaAsciiData(datapart.DataPart):
         return dict(
             load=self.load,
             import_data=self.import_data,
+            reference_data=self.reference_data,
+            export_data=self.export_data,
             save=self.save,
             clean_student_license=self.clean_student_license
         )
@@ -191,6 +168,23 @@ class MayaAsciiData(datapart.DataPart):
             return
 
         return dcc.client().import_file(filepath)
+
+    def reference_data(self):
+        """
+        References Maya file into curreent Maya scene
+        """
+
+        filepath = self.format_identifier()
+        if not filepath.endswith(MayaAsciiData.EXTENSION):
+            filepath = '{}{}'.format(filepath, MayaAsciiData.EXTENSION)
+
+        if not filepath or not os.path.isfile(filepath):
+            return
+
+        dcc.client().reference_file(filepath)
+
+    def export_data(self, *args, **kwargs):
+        print('Exporting ...')
 
     def save(self, **kwargs):
         """

@@ -124,7 +124,6 @@ class FolderData(datapart.DataPart):
         for file_folder in folders + files:
             before_identifiers.append(file_folder)
 
-        target_path = path_utils.join_path(target_path, os.path.basename(current_path))
         valid = folder.move_folder(current_path, target_path)
         if not valid:
             return None
