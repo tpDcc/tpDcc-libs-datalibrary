@@ -8,15 +8,15 @@ CREATE TABLE fields
 CREATE UNIQUE INDEX fields_id_uindex ON fields(id);
 
 INSERT into fields (name, sortable, groupable)
-VALUES ('uuid', FALSE, FALSE),
-       ('name', TRUE, FALSE),
-       ('directory', TRUE, FALSE),
-       ('type', TRUE, TRUE),
-       ('extension', TRUE, TRUE),
-       ('folder', TRUE, FALSE),
-       ('modified', TRUE, FALSE),
-       ('user', TRUE, TRUE),
-       ('ctime', TRUE, FALSE);
+VALUES ('uuid', 0, 0),
+       ('name', 1, 0),
+       ('directory', 1, 0),
+       ('type', 1, 1),
+       ('extension', 1, 1),
+       ('folder', 1, 0),
+       ('modified', 1, 0),
+       ('user', 1, 1),
+       ('ctime', 1, 0);
 
 CREATE TABLE elements
 (
