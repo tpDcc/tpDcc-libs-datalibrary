@@ -125,6 +125,11 @@ class MayaCurveData(datapart.DataPart):
         for curve in objects:
             curve_degree = dcc.client().get_curve_degree(curve)
             curve_form = dcc.client().get_curve_form(curve)
+
+            # We need to do this because we return the form using maya.cmds but we expect to use
+            # it using OpenMaya, and the form index in OpenMaya starts with 1 instead of 0
+            curve_form += 1
+
             curve_knots = dcc.client().get_curve_knots(curve)
             curve_cvs = dcc.client().get_curve_cvs(curve, world_space=world_space)
 

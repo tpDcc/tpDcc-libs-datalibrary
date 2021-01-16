@@ -18,6 +18,11 @@ from tpDcc.core import dcc as core_dcc
 
 from tpDcc.libs.datalibrary.core import consts, datapart
 
+# NOTE: only import specific DCCs module if we inside Maya
+if dcc.is_maya():
+    import maya.cmds
+
+
 LOGGER = logging.getLogger(consts.LIB_ID)
 
 
@@ -53,7 +58,7 @@ class MayaAsciiData(datapart.DataPart):
         return {
             # 'references': references,
             'references': list(),
-            'mayaVersion': str(dcc.client().get_version())
+            'mayaVersion': str(dcc.get_version())
         }
 
     def label(self):
@@ -153,7 +158,7 @@ class MayaAsciiData(datapart.DataPart):
             LOGGER.warning('Impossible to open Maya ASCII file data from: "{}"'.format(filepath))
             return
 
-        return dcc.client().open_file(filepath)
+        return dcc.open_file(filepath)
 
     def import_data(self):
         """
@@ -167,7 +172,7 @@ class MayaAsciiData(datapart.DataPart):
         if not filepath or not os.path.isfile(filepath):
             return
 
-        return dcc.client().import_file(filepath)
+        return dcc.import_file(filepath)
 
     def reference_data(self):
         """
@@ -181,12 +186,12 @@ class MayaAsciiData(datapart.DataPart):
         if not filepath or not os.path.isfile(filepath):
             return
 
-        dcc.client().reference_file(filepath)
+        dcc.reference_file(filepath)
 
     def export_data(self, *args, **kwargs):
-        print('Exporting ...')
+        return self.save(*args, **kwargs)
 
-    def save(self, **kwargs):
+    def save(self, *args, **kwargs):
         """
         Opens OS explorer where data is located
         """
@@ -201,7 +206,15 @@ class MayaAsciiData(datapart.DataPart):
 
         LOGGER.debug('Saving {} | {}'.format(filepath, kwargs))
 
-        result = dcc.client().save_dcc_file(filepath)
+        maya_type = 'mayaBinary' if filepath.endswith('.mb') else 'mayaAscii'
+
+        # selection = maya.cmds.ls(sl=True)
+        # if selection:
+        #     maya.cmds.file(
+        #         file_path, type=maya_type, options='v=0;', preserveReferences=True, exportSelected=selection)
+        # else:
+        maya.cmds.file(rename=filepath)
+        result = maya.cmds.file(type=maya_type, options='v=0;', preserveReferences=True, save=True)
 
         LOGGER.debug('Saved {} successfully!'.format(filepath))
 
