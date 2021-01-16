@@ -1,6 +1,7 @@
 # ===================================================================
 # tpDcc-libs-datalibrary requirements file
 # ===================================================================
-shortuuid
+shortuuid==1.0.1
+GitPython==3.1.12
 tpDcc-libs-python
 tpDcc-core
