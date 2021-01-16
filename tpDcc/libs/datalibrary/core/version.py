@@ -8,10 +8,19 @@ Module that contains base version control implementation
 from __future__ import print_function, division, absolute_import
 
 import os
+import logging
 from collections import OrderedDict
 
-import git
-from git import Repo
+from tpDcc.libs.datalibrary.core import consts
+
+LOGGER = logging.getLogger(consts.LIB_ID)
+
+GIT_AVAILABLE = True
+try:
+    from git import Repo
+except Exception as exc:
+    LOGGER.warning('Impossible to import GitPython library:\n\t{}\nGit related functionality will not be available!')
+    GIT_AVAILABLE = False
 
 from tpDcc.libs.python import decorators
 from tpDcc.libs.qt.core import base
@@ -78,6 +87,9 @@ class GitVersionControl(VersionControl):
         :return: bool
         """
 
+        if not GIT_AVAILABLE:
+            return False
+
         repo = GitVersionControl._get_repo(repository_path)
         if not repo:
             return False
@@ -93,6 +105,8 @@ class GitVersionControl(VersionControl):
         """
 
         commits = OrderedDict()
+        if not GIT_AVAILABLE:
+            return commits
         repo = GitVersionControl._get_repo(repository_path)
         if not repo:
             return commits
@@ -107,6 +121,8 @@ class GitVersionControl(VersionControl):
     @staticmethod
     def get_commit_data(repository_path, file_path):
         commit = OrderedDict()
+        if not GIT_AVAILABLE:
+            return commit
         repo = GitVersionControl._get_repo(repository_path)
         if not repo:
             return commit
@@ -127,6 +143,9 @@ class GitVersionControl(VersionControl):
         :return:
         """
 
+        if not GIT_AVAILABLE:
+            return
+
         repo = GitVersionControl._get_repo(repository_path)
         if not repo:
             return
@@ -141,6 +160,9 @@ class GitVersionControl(VersionControl):
         :param commit_id: str
         :return:
         """
+
+        if not GIT_AVAILABLE:
+            return
 
         repo = GitVersionControl._get_repo(repository_path)
         if not repo:
@@ -157,6 +179,9 @@ class GitVersionControl(VersionControl):
         :return:
         """
 
+        if not GIT_AVAILABLE:
+            return
+
         repo = GitVersionControl._get_repo(repository_path)
         if not repo:
             return
@@ -171,6 +196,9 @@ class GitVersionControl(VersionControl):
         :param commit_id: str
         :return: list(str)
         """
+
+        if not GIT_AVAILABLE:
+            return list()
 
         repo = GitVersionControl._get_repo(repository_path)
         if not repo:
@@ -190,7 +218,7 @@ class GitVersionControl(VersionControl):
         :return: git.Repo or None
         """
 
-        if not os.path.isdir(repository_path):
+        if not GIT_AVAILABLE or not os.path.isdir(repository_path):
             return False
 
         try:
