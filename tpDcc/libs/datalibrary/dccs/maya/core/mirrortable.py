@@ -243,3 +243,4 @@ class MayaMirrorTable(mirrortable.BaseMirrorTable):
         :return: str
         """
 
+        pass

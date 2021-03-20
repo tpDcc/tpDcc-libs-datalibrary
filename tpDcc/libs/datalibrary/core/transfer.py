@@ -31,7 +31,7 @@ class _MetaDataTransferObject(type):
                 return type.__call__(transfer.MayaDataTransferObject, *args, **kwargs)
         else:
             if as_class:
-                return  BaseDataTransferObject
+                return BaseDataTransferObject
             else:
                 return type.__call__(BaseDataTransferObject, *args, **kwargs)
 

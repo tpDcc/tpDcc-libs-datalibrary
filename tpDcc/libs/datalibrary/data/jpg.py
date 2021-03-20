@@ -20,7 +20,7 @@ class JpgImageData(datapart.DataPart):
     PRIORITY = 5
     EXTENSION = '.jpg'
 
-    _has_trait = re.compile('\.jpg$', re.I)
+    _has_trait = re.compile(r'\.jpg$', re.I)
 
     @classmethod
     def can_represent(cls, identifier, only_extension=False):

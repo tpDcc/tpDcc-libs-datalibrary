@@ -22,7 +22,7 @@ class FolderData(datapart.DataPart):
     MENU_NAME = 'Folder'
     PRIORITY = 2
 
-    _split = re.compile('/|\.|,|-|:|_', re.I)
+    _split = re.compile(r'/|\.|,|-|:|_', re.I)
 
     # ============================================================================================================
     # OVERRIDES

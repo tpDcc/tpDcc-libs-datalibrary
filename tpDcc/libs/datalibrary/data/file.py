@@ -20,7 +20,7 @@ class FileData(datapart.DataPart):
     DATA_TYPE = 'file'
     PRIORITY = 3
 
-    _split = re.compile('/|\.|,|-|:|_', re.I)
+    _split = re.compile(r'/|\.|,|-|:|_', re.I)
 
     # ============================================================================================================
     # OVERRIDES

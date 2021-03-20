@@ -384,7 +384,7 @@ class DataLibrary(object):
         with sqlite.ConnectionContext(self._id, commit=True) as connection:
             self._execute(connection, 'rename', replacements={
                 '$(IDENTIFIER)': identifier, '$(NEW_IDENTIFIER)': new_identifier, '$(NEW_UUID)': new_uuid,
-                '$(NEW_NAME)': new_name,  '$(USER)': user,  '$(MODIFIED)': modified,  '$(CTIME)': ctime})
+                '$(NEW_NAME)': new_name, '$(USER)': user, '$(MODIFIED)': modified, '$(CTIME)': ctime})
 
         self.rename_metadata(current_uuid, new_uuid)
         self.rename_thumb(current_uuid, new_uuid)
@@ -973,9 +973,9 @@ class DataLibrary(object):
         """
 
         with sqlite.ConnectionContext(self._id, commit=True) as connection:
-                self._execute(connection, 'version_add', replacements={
-                    '$(UUID)': uuid, '$(VERSION)': str(version_number),
-                    '$(NAME)': str(name), '$(COMMENT)': str(comment), '$(USER)': str(user)})
+            self._execute(connection, 'version_add', replacements={
+                '$(UUID)': uuid, '$(VERSION)': str(version_number),
+                '$(NAME)': str(name), '$(COMMENT)': str(comment), '$(USER)': str(user)})
 
     def get_versions(self, identifier):
         """
@@ -1129,7 +1129,8 @@ class DataLibrary(object):
                 new_thumb_name = '{}{}'.format(new_uuid, thumb_extension)
                 fileio.rename_file(thumb_file, thumbs_path, new_thumb_name)
                 with sqlite.ConnectionContext(self._id, commit=True) as connection:
-                    self._execute(connection, 'thumb_set', replacements={'$(UUID)': new_uuid, '$(THUMB)': new_thumb_name})
+                    self._execute(
+                        connection, 'thumb_set', replacements={'$(UUID)': new_uuid, '$(THUMB)': new_thumb_name})
                 break
 
     def delete_thumb(self, uuid):
@@ -1382,9 +1383,9 @@ class DataLibrary(object):
         dependency_identifier = self.get_identifier(dependency_identifier)
 
         with sqlite.ConnectionContext(self._id, commit=True) as connection:
-                self._execute(connection, 'dependency_add', replacements={
-                    '$(ROOT_IDENTIFIER)': root_identifier, '$(DEPENDENCY_IDENTIFIER)': dependency_identifier,
-                    '$(NAME)': name})
+            self._execute(connection, 'dependency_add', replacements={
+                '$(ROOT_IDENTIFIER)': root_identifier, '$(DEPENDENCY_IDENTIFIER)': dependency_identifier,
+                '$(NAME)': name})
 
     def get_dependencies(self, identifier, as_uuid=False):
 
