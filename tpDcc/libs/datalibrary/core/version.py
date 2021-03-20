@@ -19,7 +19,8 @@ GIT_AVAILABLE = True
 try:
     from git import Repo
 except Exception as exc:
-    LOGGER.warning('Impossible to import GitPython library:\n\t{}\nGit related functionality will not be available!')
+    LOGGER.warning(
+        'Impossible to import GitPython library:\n\t{}\nGit related functionality will not be available!'.format(exc))
     GIT_AVAILABLE = False
 
 from tpDcc.libs.python import decorators

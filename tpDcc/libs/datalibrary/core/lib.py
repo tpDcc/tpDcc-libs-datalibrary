@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Initialization module for tpDcc-libs-resources
+Initialization module for tpDcc-libs-datalibrary
 """
 
 from __future__ import print_function, division, absolute_import
