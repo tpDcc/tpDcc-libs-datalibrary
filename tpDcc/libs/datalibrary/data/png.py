@@ -20,7 +20,7 @@ class PngImageData(datapart.DataPart):
     PRIORITY = 5
     EXTENSION = '.png'
 
-    _has_trait = re.compile('\.png$', re.I)
+    _has_trait = re.compile(r'\.png$', re.I)
 
     @classmethod
     def can_represent(cls, identifier, only_extension=False):

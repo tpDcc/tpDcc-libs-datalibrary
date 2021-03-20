@@ -23,7 +23,7 @@ class PythonData(datapart.DataPart):
     PRIORITY = 5
     EXTENSION = '.py'
 
-    _has_trait = re.compile('\.py$', re.I)
+    _has_trait = re.compile(r'\.py$', re.I)
 
     # ============================================================================================================
     # OVERRIDES

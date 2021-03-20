@@ -26,7 +26,7 @@ class MirrorTableData(datapart.DataPart):
     PRIORITY = 17
     EXTENSION = '.mirror'
 
-    _has_trait = re.compile('\.mirror$', re.I)
+    _has_trait = re.compile(r'\.mirror$', re.I)
 
     def __init__(self, *args, **kwargs):
         super(MirrorTableData, self).__init__(*args, **kwargs)

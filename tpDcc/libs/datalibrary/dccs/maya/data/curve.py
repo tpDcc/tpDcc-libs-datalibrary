@@ -28,7 +28,7 @@ class MayaCurveData(datapart.DataPart):
     PRIORITY = 11
     EXTENSION = '.curve'
 
-    _has_trait = re.compile('\.curve$', re.I)
+    _has_trait = re.compile(r'\.curve$', re.I)
 
     @classmethod
     def can_represent(cls, identifier, only_extension=False):

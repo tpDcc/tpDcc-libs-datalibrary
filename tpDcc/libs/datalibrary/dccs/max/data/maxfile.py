@@ -27,7 +27,7 @@ class MaxFile(datapart.DataPart):
     PRIORITY = 10
     EXTENSION = '.max'
 
-    _has_trait = re.compile('\.max$', re.I)
+    _has_trait = re.compile(r'\.max$', re.I)
 
     @classmethod
     def can_represent(cls, identifier, only_extension=False):

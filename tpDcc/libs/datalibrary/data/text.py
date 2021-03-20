@@ -24,7 +24,7 @@ class TextData(datapart.DataPart):
     PRIORITY = 4
     EXTENSION = '.txt'
 
-    _has_trait = re.compile('\.txt$', re.I)
+    _has_trait = re.compile(r'\.txt$', re.I)
 
     # ============================================================================================================
     # OVERRIDES

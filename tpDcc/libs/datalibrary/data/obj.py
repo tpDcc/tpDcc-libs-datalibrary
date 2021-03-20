@@ -26,7 +26,7 @@ class OBJData(datapart.DataPart):
     PRIORITY = 14
     EXTENSION = '.obj'
 
-    _has_trait = re.compile('\.obj$', re.I)
+    _has_trait = re.compile(r'\.obj$', re.I)
 
     @classmethod
     def can_represent(cls, identifier, only_extension=False):

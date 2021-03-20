@@ -27,7 +27,7 @@ class PoseData(datapart.DataPart):
     PRIORITY = 16
     EXTENSION = '.pose'
 
-    _has_trait = re.compile('\.pose$', re.I)
+    _has_trait = re.compile(r'\.pose$', re.I)
 
     @classmethod
     def can_represent(cls, identifier, only_extension=False):

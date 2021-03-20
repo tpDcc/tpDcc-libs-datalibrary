@@ -26,7 +26,7 @@ class FBXData(datapart.DataPart):
     PRIORITY = 15
     EXTENSION = '.fbx'
 
-    _has_trait = re.compile('\.fbx$', re.I)
+    _has_trait = re.compile(r'\.fbx$', re.I)
 
     @classmethod
     def can_represent(cls, identifier, only_extension=False):

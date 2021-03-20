@@ -33,7 +33,7 @@ class MayaAsciiData(datapart.DataPart):
     PRIORITY = 10
     EXTENSION = '.ma'
 
-    _has_trait = re.compile('\.ma$', re.I)
+    _has_trait = re.compile(r'\.ma$', re.I)
 
     @classmethod
     def can_represent(cls, identifier, only_extension=False):

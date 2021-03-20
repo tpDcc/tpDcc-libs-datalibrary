@@ -23,7 +23,7 @@ class MayaBinaryData(datapart.DataPart):
     PRIORITY = 10
     EXTENSION = '.mb'
 
-    _has_trait = re.compile('\.mb$', re.I)
+    _has_trait = re.compile(r'\.mb$', re.I)
 
     @classmethod
     def can_represent(cls, identifier, only_extension=False):

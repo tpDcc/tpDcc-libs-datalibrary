@@ -27,7 +27,7 @@ class TransformsData(datapart.DataPart):
     PRIORITY = 15
     EXTENSION = '.xform'
 
-    _has_trait = re.compile('\.xform$', re.I)
+    _has_trait = re.compile(r'\.xform$', re.I)
 
     @classmethod
     def can_represent(cls, identifier, only_extension=False):
