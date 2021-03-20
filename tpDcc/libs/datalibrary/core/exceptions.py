@@ -62,6 +62,10 @@ class ItemLoadError(Exception):
     pass
 
 
+class AttributeError(Exception):
+    pass
+
+
 class DccUtilsError(Exception):
     pass
 

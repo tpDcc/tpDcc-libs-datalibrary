@@ -64,9 +64,6 @@ class FBXData(datapart.DataPart):
 
     def import_data(self, *args, **kwargs):
         filepath = self.format_identifier()
-        if not filepath.endswith(FBXData.EXTENSION):
-            filepath = '{}{}'.format(filepath, FBXData.EXTENSION)
-
         if not filepath:
             LOGGER.warning('Impossible to save FBX file because save file path not defined!')
             return
