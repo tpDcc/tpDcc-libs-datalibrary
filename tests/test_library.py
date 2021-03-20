@@ -58,7 +58,7 @@ class TestFilters(TestData):
 
     def test_is(self):
         data1 = self.data_dict('circle', 3)
-        data2 = self.data_dict('triangle',  3)
+        data2 = self.data_dict('triangle', 3)
         queries = [{'filters': [('name', 'is', 'circle')]}]
 
         self.assertTrue(datalib.DataLibrary.match(data1, queries))
