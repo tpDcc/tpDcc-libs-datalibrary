@@ -46,7 +46,7 @@ class DataPart(composite.Composition):
 
     EXTENSION = None
 
-    def __init__(self, identifier, db):
+    def __init__(self, identifier, db=None):
         super(DataPart, self).__init__()
 
         self._id = identifier
@@ -480,3 +480,6 @@ class DataPart(composite.Composition):
                     continue
                 dependency_item.update_dependencies(
                     dependencies={self.format_identifier(): self.type()}, recursive=False)
+
+    def _get_default_data_library(self):
+        from tpDcc.libs.datalibrary.core import datalib
