@@ -22,8 +22,7 @@ from tpDcc.libs.datalibrary.core import consts, datapart
 if dcc.is_maya():
     import maya.cmds
 
-
-LOGGER = logging.getLogger(consts.LIB_ID)
+logger = logging.getLogger(consts.LIB_ID)
 
 
 class MayaAsciiData(datapart.DataPart):
@@ -147,28 +146,22 @@ class MayaAsciiData(datapart.DataPart):
 
     def load(self):
         """
-        Opens OS explorer where data is located
+        Loads Maya ASCII file in current DCC scene
         """
 
         filepath = self.format_identifier()
-        if not filepath.endswith(MayaAsciiData.EXTENSION):
-            filepath = '{}{}'.format(filepath, MayaAsciiData.EXTENSION)
-
         if not filepath or not os.path.isfile(filepath):
-            LOGGER.warning('Impossible to open Maya ASCII file data from: "{}"'.format(filepath))
+            logger.warning('Impossible to open Maya ASCII file data from: "{}"'.format(filepath))
             return
 
         return dcc.open_file(filepath)
 
     def import_data(self):
         """
-        Imports Maya file into current Maya scene
+        Imports Maya ASCII file into current Maya scene
         """
 
         filepath = self.format_identifier()
-        if not filepath.endswith(MayaAsciiData.EXTENSION):
-            filepath = '{}{}'.format(filepath, MayaAsciiData.EXTENSION)
-
         if not filepath or not os.path.isfile(filepath):
             return
 
@@ -180,9 +173,6 @@ class MayaAsciiData(datapart.DataPart):
         """
 
         filepath = self.format_identifier()
-        if not filepath.endswith(MayaAsciiData.EXTENSION):
-            filepath = '{}{}'.format(filepath, MayaAsciiData.EXTENSION)
-
         if not filepath or not os.path.isfile(filepath):
             return
 
@@ -193,18 +183,15 @@ class MayaAsciiData(datapart.DataPart):
 
     def save(self, *args, **kwargs):
         """
-        Opens OS explorer where data is located
+        Saves Maya ASCII file
         """
 
         filepath = self.format_identifier()
-        if not filepath.endswith(MayaAsciiData.EXTENSION):
-            filepath = '{}{}'.format(filepath, MayaAsciiData.EXTENSION)
-
         if not filepath:
-            LOGGER.warning('Impossible to save Maya ASCII file because save file path not defined!')
+            logger.warning('Impossible to save Maya ASCII file because save file path not defined!')
             return
 
-        LOGGER.debug('Saving {} | {}'.format(filepath, kwargs))
+        logger.debug('Saving {} | {}'.format(filepath, kwargs))
 
         maya_type = 'mayaBinary' if filepath.endswith('.mb') else 'mayaAscii'
 
@@ -216,24 +203,24 @@ class MayaAsciiData(datapart.DataPart):
         maya.cmds.file(rename=filepath)
         result = maya.cmds.file(type=maya_type, options='v=0;', preserveReferences=True, save=True)
 
-        LOGGER.debug('Saved {} successfully!'.format(filepath))
+        logger.debug('Saved {} successfully!'.format(filepath))
 
         return result
 
     def clean_student_license(self):
         file_path = self.format_identifier()
         if not file_path or not os.path.isfile(file_path):
-            LOGGER.warning('Impossible to clean student license in invalid data file: {}'.format(file_path))
+            logger.warning('Impossible to clean student license in invalid data file: {}'.format(file_path))
             return
 
         if not file_path.endswith('.ma'):
-            LOGGER.info('Maya Binary files cannot be cleaned!')
+            logger.info('Maya Binary files cannot be cleaned!')
             return False
 
         changed = False
 
         if file_path.endswith('.mb'):
-            LOGGER.warning('Student License Check is not supported in binary files!')
+            logger.warning('Student License Check is not supported in binary files!')
             return True
 
         with open(file_path, 'r') as f:
@@ -247,7 +234,7 @@ class MayaAsciiData(datapart.DataPart):
                 has_student_license = True
                 break
         if not has_student_license:
-            LOGGER.info('File is already cleaned: no student line found!')
+            logger.info('File is already cleaned: no student line found!')
             return False
 
         with open(file_path, 'r') as f:
@@ -265,7 +252,7 @@ class MayaAsciiData(datapart.DataPart):
                         continue
                 f.write(line)
                 if step_count > step:
-                    LOGGER.debug('Updating File: {}% ...'.format(100 / (len(lines) / step_count)))
+                    logger.debug('Updating File: {}% ...'.format(100 / (len(lines) / step_count)))
                     step += step
 
         if changed:
@@ -275,7 +262,7 @@ class MayaAsciiData(datapart.DataPart):
             try:
                 os.remove(no_student_filename)
             except Exception as exc:
-                LOGGER.warning('Error while cleanup no student file process files ... >> {}'.format(exc))
+                logger.warning('Error while cleanup no student file process files ... >> {}'.format(exc))
                 return False
 
-            LOGGER.info('Cleaned student license from file: {}'.format(file_path))
+            logger.info('Cleaned student license from file: {}'.format(file_path))

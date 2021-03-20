@@ -12,9 +12,9 @@ import logging
 from tpDcc import dcc
 from tpDcc.libs.python import python
 
-from tpDcc.libs.datalibrary.core import exceptions
+from tpDcc.libs.datalibrary.core import consts, exceptions
 
-LOGGER = logging.getLogger('tpDcc-libs-datalibrary')
+logger = logging.getLogger(consts.LIB_ID)
 
 
 class Node(object):
@@ -83,7 +83,7 @@ class Node(object):
         return '|' in self.name()
 
     def is_referenced(self):
-        return dcc.node_is_referenced(self.name())
+        return dcc.client().node_is_referenced(self.name())
 
     def set_mirror_axis(self, mirror_axis):
         """
@@ -123,6 +123,266 @@ class Node(object):
         self._namespace = None
 
         return self.name()
+
+
+class Attribute(object):
+    def __init__(self, name, attr=None, value=None, type=None, cache=True):
+        if '.' in name:
+            name, attr = name.split('.')
+        if attr is None:
+            raise AttributeError('Cannot initialize attribute instance without a given attribute.')
+
+        try:
+            self._name = name.encode('ascii')
+            self._attr = attr.encode('ascii')
+        except UnicodeEncodeError:
+            raise UnicodeEncodeError('Not a valid ASCII name "{}.{}"'.format(name, attr))
+
+        self._type = type
+        self._value = value
+        self._cache = cache
+        self._full_name = None
+
+    def __str__(self):
+        return str(self.to_dict())
+
+    # =================================================================================================================
+    # PROPERTIES
+    # =================================================================================================================
+
+    @property
+    def name(self):
+        """
+        Returns the maya object name for the attribute
+        :return: str
+        """
+
+        return self._name
+
+    @property
+    def attr(self):
+        """
+        Returns the attribute name
+        :return: str
+        """
+
+        return self._attr
+
+    @property
+    def fullname(self):
+        """
+        Returns the full name (node.attribute) of the node attribute
+        :return: str
+        """
+
+        if self._full_name is None:
+            self._full_name = '{}.{}'.format(self.name, self.attr)
+
+        return self._full_name
+
+    @property
+    def type(self):
+        """
+        Returns the type of data currently in the attribute
+        :return: str
+        """
+
+        if self._type is None:
+            try:
+                if dcc.client().attribute_exists(self.name, self.attr):
+                    self._type = dcc.client().get_attribute_type(self.name, self.attr)
+                    if self._type:
+                        self._type = self._type.encode('ascii')
+            except Exception:
+                logger.exception('Cannot get attribute type for "{}'.format(self.fullname))
+
+        return self._type
+
+    @property
+    def value(self):
+        if self._value is None or not self._cache:
+            try:
+                self._value = dcc.client().get_attribute_value(self.name, self.attr)
+            except Exception:
+                logger.exception('Cannot get attribute value for "{}'.format(self.fullname))
+
+        return self._value
+
+    # =================================================================================================================
+    # BASE
+    # =================================================================================================================
+
+    def to_dict(self):
+        """
+        Returns a dictionary of the attribute object
+        :return: dict
+        """
+
+        result = {
+            'type': self.type,
+            'value': self.value,
+            'fullname': self.fullname
+        }
+
+        return result
+
+    def exists(self):
+        """
+        Returns whether or not node with attribute exists in current scene
+        :return: bool
+        """
+
+        return dcc.attribute_exists(self.name, self.attr)
+
+    def is_valid(self):
+        """
+        Returns True if the attribute type is valid; False otherwise.
+        :return: bool
+        """
+
+        return self.type in dcc.client().get_valid_attribute_types()
+
+    def is_locked(self):
+        """
+        Returns True if the attribute is locked; False otherwise.
+        :return: bool
+        """
+
+        return dcc.client().is_attribute_locked(self.name, self.attr)
+
+    def is_unlocked(self):
+        """
+        Returns True if the attribute is unlocked; False otherwise.
+        :return: bool
+        """
+
+        return not self.is_locked()
+
+    def is_connected(self, ignore_connections=None):
+        """
+        Returns True if the attribute is connected; False otherwise.
+        :param ignore_connections: list(str) or None
+        :return: bool
+        """
+
+        ignore_connections = python.force_list(ignore_connections)
+        try:
+            connection = dcc.list_connections(self.name, self.attr, destination=False)
+        except ValueError:
+            return False
+
+        if not connection:
+            return False
+
+        if ignore_connections:
+            connection_type = dcc.node_type(connection)
+            for ignore_type in ignore_connections:
+                if connection_type.startswith(ignore_type):
+                    return False
+
+        return True
+
+    def is_blendable(self):
+        """
+        Returns True if the attribute can be blended; False otherwise.
+        :return: bool
+        """
+
+        return self.type in dcc.get_valid_blendable_attribute_types()
+
+    def is_settable(self, valid_connections=None):
+        """
+        Returns True if the attribute can be set; False otherwise.
+        :param valid_connections: list(str) or None
+        """
+
+        valid_connections = python.force_list(valid_connections)
+        if not self.exists():
+            return False
+
+        if not dcc.list_attributes(self.fullname, unlocked=True, keyable=True, multi=True, scalar=True):
+            return False
+
+        connection = dcc.list_connections(self.name, self.attr, destination=False)
+        if connection:
+            connection_type = dcc.node_type(connection)
+            for valid_type in valid_connections:
+                if connection_type.startswith(valid_type):
+                    return True
+            return False
+
+        return True
+
+    def set(self, value, blend=100, key=False, clamp=True, additive=False):
+        """
+        Sets the value for the given attribute
+        :param value: float or str or list
+        :param blend: int
+        :param key: bool
+        :param clamp: bool
+        :param additive: bool
+        """
+
+        try:
+            if additive and self.type != 'bool':
+                if self.attr.startswith('scale'):
+                    value = self.value * (1 + (value - 1) * (blend / 100.0))
+                else:
+                    value = self.value + value * (blend / 100.0)
+            elif int(blend) == 0:
+                value = self.value
+            else:
+                value = (value - self.value) * (blend / 100.0)
+                value = self.value + value
+        except TypeError as exc:
+            logger.warning('Cannot blend or add attribute "{}" | {}'.format(self.fullname, exc))
+
+        try:
+            if self.type in ['string']:
+                dcc.set_attribute_value(self.name, self.attr, value)
+            elif self.type in ['list', 'matrix']:
+                dcc.set_attribute_value(self.name, self.attr, *value)
+            else:
+                dcc.set_attribute_value(self.name, self.attr, value, clamp=clamp)
+        except (ValueError, RuntimeError) as exc:
+            logger.warning('Cannot set attribute "{}" | {}'.format(self.fullname, exc))
+
+        try:
+            if key:
+                self.set_keyframe(value=value)
+        except TypeError as exc:
+            logger.warning('Cannot key attribute "{}" | {}'.format(self.fullname, exc))
+
+    def set_keyframe(self, value, respect_keyable=True, **kwargs):
+        """
+        Sets a keyframe with the given value
+        :param value:object
+        :param respect_keyable: bool
+        :param kwargs:dict
+        """
+
+        if dcc.get_minimum_attribute_value_exists(self.name, self.attr):
+            minimum = dcc.get_minimum_float_attribute_value(self.name, self.attr)
+            if value < minimum:
+                value = minimum
+
+        if dcc.get_maximum_attribute_value_exists(self.name, self.attr):
+            maximum = dcc.get_maximum_float_attribute_value(self.name, self.attr)
+            if value > maximum:
+                value = maximum
+
+        kwargs.setdefault('value', value)
+        kwargs.setdefault('respectKeyable', respect_keyable)
+
+        dcc.set_keyframe(self.name, self.attr, **kwargs)
+
+    def clear_cache(self):
+        """
+        Clears all cached values
+        """
+
+        self._type = None
+        self._value = None
 
 
 def group_objects(objects):
@@ -224,8 +484,8 @@ def match_names(source_objects, target_objects=None, target_namespaces=None, sea
     :return: list(Node, Node)
     """
 
-    # To avoid cycle imports
-    from tpDcc.libs.datalibrary.dccs.maya.data import mirrortable
+    # To avoid cyclic ipmorts
+    from tpDcc.libs.datalibrary.dccs.maya.core import mirrortable
 
     def _rotate_sequence(sequence, current):
         n = len(sequence)
@@ -267,7 +527,7 @@ def match_names(source_objects, target_objects=None, target_namespaces=None, sea
                     results.append((source_node, target_node))
                     yield (source_node, target_node)
                 else:
-                    LOGGER.debug('Cannot find matching target object for "{}"'.format(source_node.name()))
+                    logger.debug('Cannot find matching target object for "{}"'.format(source_node.name()))
         else:
             not_used_namespaces.append(source_namespace)
 
@@ -295,8 +555,8 @@ def match_names(source_objects, target_objects=None, target_namespaces=None, sea
                     results.append((source_node, target_node))
                     yield (source_node, target_node)
                 else:
-                    LOGGER.debug('Cannot find matching target object for "{}"'.format(source_node.name()))
+                    logger.debug('Cannot find matching target object for "{}"'.format(source_node.name()))
 
     for target_nodes in target_index.values():
         for target_node in target_nodes:
-            LOGGER.debug('Cannot find matching source object for {}'.format(target_node.name()))
+            logger.debug('Cannot find matching source object for {}'.format(target_node.name()))
