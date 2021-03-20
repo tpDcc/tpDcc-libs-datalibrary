@@ -1,22 +1,23 @@
 CREATE TABLE fields
 (
-    id INTEGER PRIMARY KEY ,
+    id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
     sortable BOOLEAN,
     groupable BOOLEAN
 );
 CREATE UNIQUE INDEX fields_id_uindex ON fields(id);
 
-INSERT into fields (name, sortable, groupable)
-VALUES ('uuid', 0, 0),
-       ('name', 1, 0),
-       ('directory', 1, 0),
-       ('type', 1, 1),
-       ('extension', 1, 1),
-       ('folder', 1, 0),
-       ('modified', 1, 0),
-       ('user', 1, 1),
-       ('ctime', 1, 0);
+-- We need to insert entries in this way to support sqlite3 in Python 2
+-- Also, not that we cannot use TRUE/FALSE, se we use 1/0 instead
+INSERT into fields (name, sortable, groupable) VALUES ('uuid', 0, 0);
+INSERT into fields (name, sortable, groupable) VALUES ('name', 1, 0);
+INSERT into fields (name, sortable, groupable) VALUES ('directory', 1, 0);
+INSERT into fields (name, sortable, groupable) VALUES ('type', 1, 1);
+INSERT into fields (name, sortable, groupable) VALUES ('extension', 1, 1);
+INSERT into fields (name, sortable, groupable) VALUES ('folder', 1, 0);
+INSERT into fields (name, sortable, groupable) VALUES ('modified', 1, 0);
+INSERT into fields (name, sortable, groupable) VALUES ('user', 1, 1);
+INSERT into fields (name, sortable, groupable) VALUES ('ctime', 1, 0);
 
 CREATE TABLE elements
 (
