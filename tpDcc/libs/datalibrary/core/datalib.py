@@ -14,8 +14,9 @@ import shortuuid
 
 from tpDcc import dcc
 from tpDcc.managers import configs
-from tpDcc.libs.python import python, timedate, fileio, jsonio, signal, version, sqlite, plugin, modules
+from tpDcc.libs.python import python, timedate, fileio, jsonio, signal, version, sqlite, modules
 from tpDcc.libs.python import path as path_utils, contexts, decorators, folder as folder_utils
+from tpDcc.libs.plugin.core import factory
 
 from tpDcc.libs.datalibrary.core import consts, scanner, datapart
 
@@ -53,8 +54,8 @@ class DataLibrary(object):
         plugin_locations.extend(self.default_plugin_paths())
         plugin_locations = list(set(plugin_locations))
 
-        self._scan_factory = plugin.PluginFactory(scanner.BaseScanner, paths=plugin_locations, plugin_id='SCAN_TYPE')
-        self._data_factory = plugin.PluginFactory(datapart.DataPart, paths=plugin_locations, plugin_id='DATA_TYPE')
+        self._scan_factory = factory.PluginFactory(scanner.BaseScanner, paths=plugin_locations, plugin_id='SCAN_TYPE')
+        self._data_factory = factory.PluginFactory(datapart.DataPart, paths=plugin_locations, plugin_id='DATA_TYPE')
 
         if load_data_plugins_from_settings:
             self._register_data_plugins_classes_from_config()

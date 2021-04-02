@@ -9,16 +9,12 @@ and their compositions are used to represent data
 from __future__ import print_function, division, absolute_import
 
 import os
-import logging
 
-from tpDcc.libs.python import fileio, jsonio, version, folder, composite, path as path_utils
-
-from tpDcc.libs.datalibrary.core import consts
-
-LOGGER = logging.getLogger(consts.LIB_ID)
+from tpDcc.libs.composite.core import composition, decorators
+from tpDcc.libs.python import fileio, jsonio, version, folder, path as path_utils
 
 
-class DataPart(composite.Composition):
+class DataPart(composition.Composition):
     """
     A DataPart is a block of functionality and an interface to a piece of data. A piece of data can be
     represented by multiple DataParts in a composite form
@@ -98,7 +94,7 @@ class DataPart(composite.Composition):
 
         return list()
 
-    @composite.first_true
+    @decorators.first_true
     def type(self):
         """
         Returns type of the file
@@ -107,7 +103,7 @@ class DataPart(composite.Composition):
 
         return "Data"
 
-    @composite.first_true
+    @decorators.first_true
     def label(self):
         """
         Returns the label or name for the DataPart. This would be the pretty or display name and oes not need to be
@@ -118,7 +114,7 @@ class DataPart(composite.Composition):
 
         return None
 
-    @composite.first_true
+    @decorators.first_true
     def icon(self):
         """
         Returns the icon for the DataPart. If multiple data parts are bound to represent a piece of information
@@ -128,7 +124,7 @@ class DataPart(composite.Composition):
 
         return False
 
-    @composite.first_true
+    @decorators.first_true
     def menu_name(self):
         """
         Defines the display name that should appear in the create data menus. If not given, data part will not appear
@@ -138,7 +134,7 @@ class DataPart(composite.Composition):
 
         return None
 
-    @composite.first_true
+    @decorators.first_true
     def extension(self):
         """
         Returns data extension
@@ -147,7 +143,7 @@ class DataPart(composite.Composition):
 
         return None
 
-    @composite.extend_unique
+    @decorators.extend_unique
     def mandatory_tags(self):
         """
         Returns any tags that should always be assigned to this data element. In a situation where multiple DataParts
@@ -157,7 +153,7 @@ class DataPart(composite.Composition):
 
         return None
 
-    @composite.update_dictionary_unique
+    @decorators.update_dictionary_unique
     def functionality(self):
         """
         Exposes per-data functionality in the form of a dictionary where the key is the string accessor, and the value
@@ -166,9 +162,9 @@ class DataPart(composite.Composition):
         :return: dict
         """
 
-        return composite.Ignore
+        return decorators.Ignore
 
-    @composite.extend_results
+    @decorators.extend_results
     def load_schema(self):
         """
         Gets the options used to load the item
@@ -177,34 +173,34 @@ class DataPart(composite.Composition):
 
         return list()
 
-    @composite.extend_results
+    @decorators.extend_results
     def save_schema(self):
         """
         Returns the schema used for saving the item
         :return: dict
         """
 
-        return composite.Ignore
+        return decorators.Ignore
 
-    @composite.extend_results
+    @decorators.extend_results
     def export_schema(self):
         """
         Returns the schema used for exporting the item
         :return: dict
         """
 
-        return composite.Ignore
+        return decorators.Ignore
 
-    @composite.update_dictionary
+    @decorators.update_dictionary
     def metadata_dict(self):
         """
         Exposes per-metadata functionality in the form of a dictionary
         :return: dict
         """
 
-        return composite.Ignore
+        return decorators.Ignore
 
-    @composite.extend_results
+    @decorators.extend_results
     def save_validator(self, **kwargs):
         """
         Validates the given save fields
@@ -215,7 +211,7 @@ class DataPart(composite.Composition):
 
         pass
 
-    @composite.extend_results
+    @decorators.extend_results
     def load_validator(self, **options):
         """
         Validates the current load options
