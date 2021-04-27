@@ -35,13 +35,13 @@ class TgaImageData(datapart.DataPart):
         return 'image.tga'
 
     def icon(self):
-        return self.identifier()
+        return self.format_identifier()
 
     def extension(self):
         return '.tga'
 
     def functionality(self):
-        return dict(show=partial(os.system, self.identifier(),))
+        return dict(show=partial(os.system, self.format_identifier(),))
 
     def label(self):
-        return os.path.basename(self.identifier())
+        return os.path.basename(self.format_identifier())
